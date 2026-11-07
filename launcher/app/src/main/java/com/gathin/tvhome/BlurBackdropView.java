@@ -211,6 +211,9 @@ public class BlurBackdropView extends View {
     }
 
     void clear() {
+        // Already clear: nothing to repaint. Liquid glass asks for this at every frame the dock band moves, and the
+        // invalidate below then redrew this full-screen view each time for the Settings button's glass.
+        if (!enabled && !fullScreen && region.isEmpty()) return;
         animate().cancel();
         Rect dirty = fullScreen ? new Rect(0, 0, getWidth(), getHeight()) : new Rect(region);
         enabled = false;
