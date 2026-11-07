@@ -32,6 +32,13 @@
         android:layout_height="match_parent"
         android:alpha="0" />
 
+    <!-- RenderScript backdrop blur, clipped by MainActivity to the dock or full grid background. -->
+    <com.gathin.tvhome.BlurBackdropView
+        android:id="@+id/backdropBlur"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
     <!-- Race-weekend panel (a theme's race_calendar, see RaceWeekend), mirrored: under the clock on the right. -->
     <LinearLayout
         android:id="@+id/racePanel"
@@ -186,51 +193,68 @@
                 android:layout_alignParentEnd="true"
                 android:layout_toEndOf="@+id/topButtons"
                 android:layout_marginStart="16dp"
-                android:orientation="horizontal"
-                android:gravity="right|bottom">
+                android:orientation="vertical"
+                android:gravity="right">
 
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="bottom"
-                    android:layout_marginBottom="9dp"
-                    android:orientation="vertical">
+                    android:layout_gravity="right"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal">
 
-                    <!-- Shamsi date ("27 Mehr 1405"), shown when shamsi_date is on. -->
                     <TextView
-                        android:id="@+id/shamsiDate"
-                        android:gravity="right"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:textColor="#E6FFFFFF"
-                        android:textSize="17sp"
-                        android:fontFamily="@string/font_regular"
-                        android:letterSpacing="0.02"
-                        android:includeFontPadding="false"
-                        android:visibility="gone" />
-
-                    <TextClock
-                        android:id="@+id/date"
-                        android:gravity="right"
+                        android:id="@+id/greeting"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:format12Hour="@string/date_format"
-                        android:format24Hour="@string/date_format"
-                        android:textColor="#A6FFFFFF"
-                        android:textSize="14sp"
-                        android:fontFamily="@string/font_regular"
-                        android:letterSpacing="0.14"
-                        android:textAllCaps="true" />
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center_horizontal">
+
+                        <!-- Shamsi date ("27 Mehr 1405"), shown when shamsi_date is on. -->
+                        <TextView
+                            android:id="@+id/shamsiDate"
+                            android:gravity="center_horizontal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:textColor="#D9FFFFFF"
+                            android:textSize="17sp"
+                            android:fontFamily="@string/font_regular"
+                            android:letterSpacing="0.02"
+                            android:includeFontPadding="false"
+                            android:visibility="gone" />
+
+                        <TextClock
+                            android:id="@+id/date"
+                            android:gravity="center_horizontal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="2dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:format12Hour="@string/date_format"
+                            android:format24Hour="@string/date_format"
+                            android:textColor="#C7FFFFFF"
+                            android:textSize="17sp"
+                            android:fontFamily="@string/font_medium"
+                            android:letterSpacing="0.01"
+                            android:shadowColor="#66000000"
+                            android:shadowDx="0"
+                            android:shadowDy="1"
+                            android:shadowRadius="4"
+                            android:textAllCaps="false" />
 
                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
                         <TextView
                             android:id="@+id/lunarDate"
-                            android:gravity="right"
-                            android:layout_width="match_parent"
+                            android:gravity="center_horizontal"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
                             android:singleLine="true"
@@ -238,41 +262,10 @@
                             android:textColor="#80FFFFFF"
                             android:textSize="14sp"
                             android:fontFamily="@string/font_regular"
-                            android:letterSpacing="0.14"
-                            android:textAllCaps="true"
+                            android:letterSpacing="0.08"
+                            android:textAllCaps="false"
                             android:visibility="gone" />
-                </LinearLayout>
-
-                <View
-                    android:id="@+id/clockDivider"
-                    android:layout_width="1dp"
-                    android:layout_height="26dp"
-                    android:layout_gravity="bottom"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginEnd="16dp"
-                    android:layout_marginBottom="8dp"
-                    android:background="#33FFFFFF" />
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:id="@+id/greeting"
-                        android:gravity="center_horizontal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:maxLines="1"
-                        android:autoSizeTextType="uniform"
-                        android:autoSizeMinTextSize="9sp"
-                        android:autoSizeMaxTextSize="12sp"
-                        android:autoSizeStepGranularity="1sp"
-                        android:ellipsize="end"
-                        android:textColor="#8CFFFFFF"
-                        android:textSize="12sp"
-                        android:fontFamily="@string/font_medium"
-                        android:letterSpacing="0"
-                        android:textAllCaps="true" />
+                    </LinearLayout>
 
                     <LinearLayout
                         android:layout_width="wrap_content"
@@ -304,11 +297,21 @@
                             android:layout_marginEnd="6dp"
                             android:format12Hour="h:mm"
                             android:format24Hour="HH:mm"
-                            android:textColor="#FFFFFFFF"
-                            android:textSize="52sp"
-                            android:fontFamily="@string/font_light"
-                            android:letterSpacing="-0.04"
+                            android:textColor="#BFFFFFFF"
+                            android:textSize="64sp"
+                            android:fontFamily="@string/font_medium"
+                            android:letterSpacing="-0.06"
+                            android:shadowColor="#80000000"
+                            android:shadowDx="0"
+                            android:shadowDy="2"
+                            android:shadowRadius="7"
                             android:includeFontPadding="false" />
+
+                        <View
+                            android:id="@+id/clockDivider"
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:visibility="gone" />
                     </LinearLayout>
 
                 </LinearLayout>
@@ -340,6 +343,7 @@
                 android:id="@+id/topButtons"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:visibility="visible"
                 android:layout_alignParentStart="true"
                 android:layout_alignBottom="@id/leftBlock"
                 android:layout_marginBottom="6dp"

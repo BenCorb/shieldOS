@@ -35,6 +35,31 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     /** dock_band_all: in a single row, the band runs behind every app instead of the dock apps only. */
     private final boolean bandAll;
 
+    /** Told when the band's drawn shape (grid coordinates) or corner radius changes, so the backdrop blur can follow it. */
+    interface BandListener {
+        void onBandChanged();
+    }
+
+    private BandListener bandListener;
+
+    /** Paints the band as liquid glass in the grid's canvas; false when it cannot yet, and the plain band is drawn. */
+    interface GlassPainter {
+        boolean paint(Canvas canvas, RectF band, float radius);
+    }
+
+    private GlassPainter glassPainter;
+
+    /**
+     * config liquid_glass: the band is drawn as liquid glass here, in the same pass as the tiles, so it never lags
+     * behind them when the grid scrolls (the backdrop view would only learn of the move a frame later).
+     */
+    void setGlassPainter(GlassPainter painter) {
+        glassPainter = painter;
+    }
+    /** The band exactly as last drawn, in the grid's coordinates; empty when no band is drawn. */
+    private final RectF lastBand = new RectF();
+    private float lastRadius;
+
     /**
      * @param translucent the cinematic shelf's band: the artwork and the glow show through it.
      * @param names       the dock tiles show their names, so the band reaches down over them.
@@ -59,6 +84,30 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         edge.setStyle(Paint.Style.STROKE);
         edge.setStrokeWidth(density);
         edge.setColor(lightGlass ? 0x38FFFFFF : translucent ? 0x26FFFFFF : 0x1FFFFFFF);
+    }
+
+    void setBandListener(BandListener listener) {
+        bandListener = listener;
+    }
+
+    /** Copies the band's last drawn rectangle (grid coordinates) into out; false when no band is drawn. */
+    boolean band(RectF out) {
+        out.set(lastBand);
+        return !lastBand.isEmpty();
+    }
+
+    /** The band's last drawn corner radius, in px. */
+    float bandRadius() {
+        return lastRadius;
+    }
+
+    private void publishBand(RectF band, float radius) {
+        boolean changed = band == null ? !lastBand.isEmpty() : !band.equals(lastBand) || radius != lastRadius;
+        if (!changed) return;
+        if (band == null) lastBand.setEmpty();
+        else lastBand.set(band);
+        lastRadius = band == null ? 0f : radius;
+        if (bandListener != null) bandListener.onBandChanged();
     }
 
     /** Concentric corners: the band's radius is the tiles' radius plus the band's padding around them. */
@@ -87,7 +136,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
 
     @Override
     public void onDraw(@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-        if (!bandVisible) return;
+        if (!bandVisible) {
+            publishBand(null, 0f);
+            return;
+        }
         boolean any = false;
         int cardWidth = 0;
         for (int i = 0; i < parent.getChildCount(); i++) {
@@ -109,7 +161,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
                 rect.union(l, t, r, b);
             }
         }
-        if (!any) return;
+        if (!any) {
+            publishBand(null, 0f);
+            return;
+        }
         float pad = 14 * density;
         // The band can only draw inside the grid, and the first and last dock tiles sit 12dp in from its
         // edges: a full 14dp at the sides sliced the rounded ends flat (#454). Keep the sides, with the
@@ -146,7 +201,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             shaderTop = rect.top;
             shaderBottom = rect.bottom;
         }
-        c.drawRoundRect(rect, radius, radius, band);
-        c.drawRoundRect(rect, radius, radius, edge);
+        if (glassPainter == null || !glassPainter.paint(c, rect, radius)) {
+            c.drawRoundRect(rect, radius, radius, band);
+            c.drawRoundRect(rect, radius, radius, edge);
+        }
+        publishBand(rect, radius);
     }
 }

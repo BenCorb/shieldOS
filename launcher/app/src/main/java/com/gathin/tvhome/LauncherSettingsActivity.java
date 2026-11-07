@@ -32,6 +32,9 @@ public final class LauncherSettingsActivity extends Activity {
     private final TextView[] rowChoices = new TextView[4];
     private static final int[] DOCK_OPACITIES = {100, 70, 50, 30};
     private final TextView[] dockChoices = new TextView[DOCK_OPACITIES.length];
+    private View blurSlider;
+    private android.widget.ProgressBar blurBar;
+    private TextView blurLabel;
     private static final String[] CLOCK_FORMATS = {"system", "12", "24"};
     private final TextView[] clockChoices = new TextView[CLOCK_FORMATS.length];
     private TextView wallpaperChoice;
@@ -42,6 +45,7 @@ public final class LauncherSettingsActivity extends Activity {
     private int columns;
     private int rowsBelowDock;
     private int dockOpacity;
+    private int dockBlur;
     private String clockFormat;
     private boolean animations;
     private boolean advancedEffects;
@@ -50,6 +54,16 @@ public final class LauncherSettingsActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
+        // tvOS settings sit over the blurred wallpaper, darkened so the text stays readable.
+        android.graphics.Bitmap backdrop = BlurBackdropView.copyOfLatest();
+        if (backdrop != null) {
+            android.graphics.drawable.BitmapDrawable blurred =
+                    new android.graphics.drawable.BitmapDrawable(getResources(), backdrop);
+            blurred.setFilterBitmap(true);
+            findViewById(R.id.settingsScroll).setBackground(new android.graphics.drawable.LayerDrawable(
+                    new android.graphics.drawable.Drawable[]{blurred,
+                            new android.graphics.drawable.ColorDrawable(0xB8101012)}));
+        }
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
         Config config = Config.load(this);
         View reorderChoice = findViewById(R.id.reorderChoice);
@@ -61,6 +75,7 @@ public final class LauncherSettingsActivity extends Activity {
         columns = config.columns;
         rowsBelowDock = config.rowsBelowDock;
         dockOpacity = config.dockOpacity;
+        dockBlur = config.dockBlur;
         clockFormat = config.clockFormat;
         animations = config.animations;
         advancedEffects = config.animations && config.advancedEffects;
@@ -89,6 +104,11 @@ public final class LauncherSettingsActivity extends Activity {
                 refresh();
             });
         }
+        if (config.tvosHome) {
+            // tvOS Home always shows a peek of the grid under the dock, so the row count is not a choice there.
+            findViewById(R.id.rowsLabel).setVisibility(View.GONE);
+            ((View) rowChoices[0].getParent()).setVisibility(View.GONE);
+        }
         int[] dockIds = {R.id.dock100, R.id.dock70, R.id.dock50, R.id.dock30};
         for (int i = 0; i < dockIds.length; i++) {
             final int value = DOCK_OPACITIES[i];
@@ -101,6 +121,25 @@ public final class LauncherSettingsActivity extends Activity {
                 refresh();
             });
         }
+        // The glass blur is a slider: Left and Right step it from 0 (clear) to the most frosted level.
+        blurSlider = findViewById(R.id.blurSlider);
+        blurBar = findViewById(R.id.blurBar);
+        blurLabel = findViewById(R.id.blurLabel);
+        blurBar.setMax(BlurBackdropView.MAX_LEVEL);
+        blurSlider.setOnKeyListener((v, keyCode, event) -> {
+            int step = keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT ? 1
+                    : keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 0;
+            if (step == 0) return false;
+            if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return true;
+            int value = Math.max(0, Math.min(BlurBackdropView.MAX_LEVEL, dockBlur + step));
+            if (value != dockBlur) {
+                dockBlur = value;
+                choices.edit().putInt(Config.DOCK_BLUR_KEY, value).apply();
+                changed();
+                refresh();
+            }
+            return true;
+        });
         int[] clockIds = {R.id.clockSystem, R.id.clock12, R.id.clock24};
         for (int i = 0; i < clockIds.length; i++) {
             final String value = CLOCK_FORMATS[i];
@@ -157,11 +196,13 @@ public final class LauncherSettingsActivity extends Activity {
             if (!hasOnTvChoices()) return;
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
-                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY).commit();
+                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.DOCK_BLUR_KEY).remove(Config.CLOCK_FORMAT_KEY)
+                    .remove(OpenOnStart.KEY).commit();
             Config current = Config.load(this);
             columns = current.columns;
             rowsBelowDock = current.rowsBelowDock;
             dockOpacity = current.dockOpacity;
+            dockBlur = current.dockBlur;
             clockFormat = current.clockFormat;
             animations = current.animations;
             advancedEffects = current.animations && current.advancedEffects;
@@ -302,6 +343,9 @@ public final class LauncherSettingsActivity extends Activity {
         for (int i = 0; i < dockChoices.length; i++) {
             dockChoices[i].setSelected(dockOpacity == DOCK_OPACITIES[i]);
         }
+        blurBar.setProgress(dockBlur);
+        blurLabel.setText(getString(R.string.dock_blur_state, dockBlur));
+        blurSlider.setContentDescription(getString(R.string.dock_blur_state, dockBlur));
         for (int i = 0; i < clockChoices.length; i++) {
             clockChoices[i].setSelected(CLOCK_FORMATS[i].equals(clockFormat));
         }
@@ -324,6 +368,7 @@ public final class LauncherSettingsActivity extends Activity {
         return choices.contains("columns") || choices.contains(Config.ROWS_BELOW_DOCK_KEY)
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
+                || choices.contains(Config.DOCK_BLUR_KEY)
                 || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(OpenOnStart.KEY);
     }
 

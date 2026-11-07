@@ -44,6 +44,7 @@
     <string name="storage_gb_whole">%1$.0f GB</string>
     <string name="storage_gb_decimal">%1$.1f GB</string>
     <string name="dream_name">Clock</string>
+    <string name="start_screensaver">Start screen saver</string>
     <string name="vpn">VPN</string>
     <string name="vpn_off">VPN off</string>
     <string name="home_settings">Choose default home</string>
@@ -53,6 +54,10 @@
     <string name="columns_label">Apps per row</string>
     <string name="rows_below_dock_label">Rows below dock</string>
     <string name="dock_opacity_label">Dock band opacity</string>
+    <string name="dock_blur_label">Glass blur</string>
+    <string name="dock_blur_state">Glass blur: %1$d / 10</string>
+    <string name="blur_off">None</string>
+    <string name="blur_max">Max</string>
     <string name="wallpaper_label">Wallpaper</string>
     <string name="wallpaper_state">Wallpaper: %1$s</string>
     <string name="wallpaper_none">None</string>

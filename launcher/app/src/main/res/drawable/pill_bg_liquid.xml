@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A top-bar button over liquid glass (config liquid_glass): the glass behind it is the button, so at rest it is only
+     a faint disc, like the profile picture in tvOS's time pill; focused it is the same white plate as pill_bg. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#F5FFFFFF" />
+            <corners android:radius="21dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1FFFFFFF" />
+            <corners android:radius="21dp" />
+        </shape>
+    </item>
+</selector>

@@ -56,6 +56,9 @@ SCREENSHOT_WANTED = {
     "wallpaper_moods", "wallpaper_order", "wallpaper_true_color", "wifi_label_width",
     "wifi_status_color",
 }
+# shieldOS fork: keys added by the fork whose screenshot (from a Shield with a neutral theme) is still to
+# be taken. Same rule as above: once a key has a row in docs/switches.md, take it off here.
+SCREENSHOT_WANTED |= {"dock_blur", "grid_peek", "liquid_glass", "tvos_focus", "tvos_home"}
 
 
 def theme_keys():

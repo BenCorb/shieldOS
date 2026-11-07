@@ -63,6 +63,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         void onLibraryUp();
         /** A tile whose launch_actions entry is "input:<id>": switch to that TV input instead of opening an app. */
         void onOpenInput(String inputId);
+
     }
 
     static final class Entry {
@@ -210,6 +211,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean reducedMotion;
     /** The focus zoom may overshoot (config.xml, focus_overshoot). */
     private final boolean focusOvershoot;
+    /** tvOS-style tile focus replaces the moving glass when enabled. */
+    private final boolean tvosFocus;
     /** Package to the action its tile sends instead of the start screen (config.xml, launch_actions). */
     private final Map<String, String> launchActions;
     /** Hold OK opens the activity's tile menu (config.xml, tile_menu); false opens App info, as before. */
@@ -236,6 +239,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.showLibrary = LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
         this.reducedMotion = cfg.reducedMotion;
         this.focusOvershoot = cfg.focusOvershoot;
+        this.tvosFocus = cfg.tvosFocus;
         this.rowsBelowDock = cfg.rowsBelowDock;
         this.dockTitle = cfg.dockTitle;
         this.dockRow = cfg.dockRow;
@@ -421,6 +425,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         cardLp.width = w;
         cardLp.height = h;
         card.setLayoutParams(cardLp);
+        ((TileShadowView) v.findViewById(R.id.tvosShadow)).fitTile(w, h);
         View name = v.findViewById(R.id.name);
         ViewGroup.MarginLayoutParams nameLp = (ViewGroup.MarginLayoutParams) name.getLayoutParams();
         nameLp.width = w;
@@ -452,7 +457,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             View label = v.findViewById(R.id.label);
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha,
+                focusOvershoot, tvosFocus);
     }
 
     @Override
@@ -475,19 +481,30 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.card.setVisibility(View.VISIBLE);
         h.card.setFocusable(true);
         h.name.setText(e.name);
-        // The dock has no labels, unless always_show_names asks for them (DockDecoration then makes room in the band).
-        // In a single row every tile is the dock's kind: the big title above names it.
+        // The dock is deliberately icon-only. In a single row every tile is the dock's kind: the title above it
+        // carries the identity while the grid labels remain available below the dock.
         boolean dockKind = DockSlots.inDockRow(dockRow, singleRow, position, dockSize);
-        h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
+        h.name.setVisibility(dockKind ? View.INVISIBLE : View.VISIBLE);
         h.inDock = dockKind;
+        h.dockEdge = 0;
+        if (dockKind && position == 0) h.dockEdge = 1;
+        else if (dockKind && position == dockSize - 1) h.dockEdge = -1;
+        if (h.card.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) h.dockEdge = -h.dockEdge;
         boolean focused = h.card.isFocused();   // a rebind after reload() can hit the focused tile
-        h.name.setAlpha(focused ? 1f : restNameAlpha);
-        h.card.setScaleX(focused && animations ? focusScale() : 1f);
-        h.card.setScaleY(focused && animations ? focusScale() : 1f);
-        h.card.setTranslationY(focused && advancedEffects && !dockKind ? -4f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
-        h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
+        // Like tvOS, only the focused grid tile shows its name (always_show_names keeps the others faintly); the dock
+        // remains icon-only even while focused.
+        float idleNameAlpha = dockKind ? 0f : restNameAlpha;
+        h.name.setAlpha(dockKind ? 0f : (focused ? 1f : idleNameAlpha));
+        if (tvosFocus) {
+            h.motion.set(focused, animations, reducedMotion, h.focusShift());
+        } else {
+            h.card.setScaleX(focused && animations ? focusScale() : 1f);
+            h.card.setScaleY(focused && animations ? focusScale() : 1f);
+            h.card.setTranslationY(focused && advancedEffects && !dockKind ? -4f * ctx.getResources().getDisplayMetrics().density : 0f);
+            h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
+            h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
+            h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
+        }
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
         // nothing on every frame; keep it under banners with transparent parts and under icon tiles.
         h.card.setBackground(e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
@@ -529,8 +546,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     @SuppressWarnings("deprecation")
     private void launch(Entry e) {
         if (e.kind == Entry.HOME_SETTINGS) {
-            ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            try {
+                ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (ActivityNotFoundException | SecurityException ignored) {
+                Toast.makeText(ctx, R.string.not_available, Toast.LENGTH_SHORT).show();
+            }
             return;
         }
         Intent i = new Intent(Intent.ACTION_MAIN)
@@ -676,6 +697,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     float focusScale() {
+        if (tvosFocus) return !animations ? 1.10f : reducedMotion ? 1.08f : TvosFocusMotion.SCALE;
         return !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
     }
 
@@ -907,17 +929,21 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final ImageView icon;
         final TextView label;
         final TextView name;
+        final TvosFocusMotion motion;
         final boolean animations;
         final boolean advancedEffects;
         final boolean reducedMotion;
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
         final boolean overshoot;
+        final boolean tvosFocus;
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
+        /** +1 at the dock's visual left edge, -1 at its right edge, 0 elsewhere. */
+        int dockEdge;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot) {
+               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean tvosFocus) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -925,13 +951,17 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             icon = v.findViewById(R.id.icon);
             label = v.findViewById(R.id.label);
             name = v.findViewById(R.id.name);
+            View shine = v.findViewById(R.id.tvosShine);
             this.animations = animations;
             this.advancedEffects = advancedEffects;
             this.reducedMotion = reducedMotion;
             this.restNameAlpha = restNameAlpha;
             this.overshoot = overshoot;
+            this.tvosFocus = tvosFocus;
 
             final float density = v.getResources().getDisplayMetrics().density;
+            TileShadowView shadow = v.findViewById(R.id.tvosShadow);
+            motion = new TvosFocusMotion(card, shine, shadow, density);
             card.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
@@ -953,6 +983,24 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.animate().cancel();
                 banner.animate().cancel();
                 name.animate().cancel();
+                if (tvosFocus) {
+                    motion.animate(focused, animations, reducedMotion, focusShift());
+                    float idleNameAlpha = inDock ? 0f : restNameAlpha;
+                    float focusNameAlpha = inDock ? 0f : 1f;
+                    if (!animations || reducedMotion) {
+                        name.setAlpha(focused ? focusNameAlpha : idleNameAlpha);
+                        if (focused) name.setTranslationY(density * 4f);
+                    } else {
+                        name.animate().alpha(focused ? focusNameAlpha : idleNameAlpha)
+                                .translationY(focused ? density * 4f : -density * 6f)
+                                .setDuration(220).start();
+                    }
+                    int pos = getBindingAdapterPosition();
+                    if (focused && listener != null && pos != RecyclerView.NO_POSITION) {
+                        listener.onTileFocused(pos, view);
+                    }
+                    return;
+                }
                 float scale = !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
                 float s = focused ? scale : 1f;
                 if (!animations) {
@@ -999,6 +1047,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     listener.onTileFocused(pos, view);
                 }
             });
+        }
+
+        private float focusShift() {
+            return dockEdge * TvosFocusMotion.edgeShift(card.getWidth(), density());
+        }
+
+        private float density() {
+            return card.getResources().getDisplayMetrics().density;
         }
     }
 }

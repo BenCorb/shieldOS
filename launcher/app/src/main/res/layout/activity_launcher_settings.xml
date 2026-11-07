@@ -2,7 +2,8 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FF101419"
+    android:id="@+id/settingsScroll"
+    android:background="#FF141416"
     android:fillViewport="true">
 
     <LinearLayout
@@ -19,6 +20,7 @@
             android:layout_height="wrap_content"
             android:text="@string/launcher_settings"
             android:textColor="#FFFFFFFF"
+            android:fontFamily="@string/font_medium"
             android:textSize="34sp" />
 
         <TextView
@@ -33,8 +35,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
             android:text="@string/columns_label"
-            android:textColor="#FFFFFFFF"
-            android:textSize="20sp" />
+            android:textColor="#B3EBEBF5"
+            android:fontFamily="@string/font_medium"
+            android:textSize="18sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -49,12 +52,14 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/rowsLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:text="@string/rows_below_dock_label"
-            android:textColor="#FFFFFFFF"
-            android:textSize="20sp" />
+            android:textColor="#B3EBEBF5"
+            android:fontFamily="@string/font_medium"
+            android:textSize="18sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -73,8 +78,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:text="@string/dock_opacity_label"
-            android:textColor="#FFFFFFFF"
-            android:textSize="20sp" />
+            android:textColor="#B3EBEBF5"
+            android:fontFamily="@string/font_medium"
+            android:textSize="18sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -89,12 +95,61 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/blurLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/dock_blur_label"
+            android:textColor="#B3EBEBF5"
+            android:fontFamily="@string/font_medium"
+            android:textSize="18sp" />
+
+        <!-- The glass blur, 0 (clear) to 10: Left and Right move it, and it applies at once. -->
+        <LinearLayout
+            android:id="@+id/blurSlider"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:duplicateParentState="true"
+                android:text="@string/blur_off"
+                android:textColor="@drawable/pill_text"
+                android:fontFamily="@string/font_medium"
+                android:textSize="16sp" />
+
+            <ProgressBar
+                android:id="@+id/blurBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="8dp"
+                android:layout_weight="1"
+                android:layout_marginStart="18dp"
+                android:layout_marginEnd="18dp"
+                android:duplicateParentState="true"
+                android:max="10"
+                android:progressDrawable="@drawable/settings_slider" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:duplicateParentState="true"
+                android:text="@string/blur_max"
+                android:textColor="@drawable/pill_text"
+                android:fontFamily="@string/font_medium"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:text="@string/dream_name"
-            android:textColor="#FFFFFFFF"
-            android:textSize="20sp" />
+            android:textColor="#B3EBEBF5"
+            android:fontFamily="@string/font_medium"
+            android:textSize="18sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -127,7 +182,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="@string/advanced_effects_warning"
-            android:textColor="#FFACB8C1"
+            android:textColor="#80EBEBF5"
             android:textSize="14sp" />
 
         <TextView
@@ -147,7 +202,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="7dp"
             android:text="@string/follow_theme_hint"
-            android:textColor="#FFACB8C1"
+            android:textColor="#80EBEBF5"
             android:textSize="14sp" />
 
         <TextView
@@ -161,7 +216,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="7dp"
             android:text="@string/home_settings_help"
-            android:textColor="#FFACB8C1"
+            android:textColor="#80EBEBF5"
             android:textSize="14sp" />
 
         <TextView

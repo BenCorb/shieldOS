@@ -45,6 +45,7 @@ Click **Settings** for the TV's own settings. Hold OK on it for its menu:
 - **Edit dock**, with `dock_row`.
 - **Reorder apps**: OK picks an app up, the arrows move it, Back places it, and Back again finishes.
   With `tile_menu` (on by default since 3.3), holding OK on a tile offers **Move**, which picks that app up straight away.
+- **Start screen saver**, which starts the TV's configured dream (or CleanYourTV's Clock fallback).
 - **Restart…** while `HomeKeyService` runs, which opens the system power menu (a launcher may not
   restart the TV itself).
 
@@ -54,6 +55,8 @@ The launcher's own page has these rows, top to bottom:
 - **Apps per row** 4, 5, 6 or 7; **Rows below dock** 0 to 3, how many rows of tiles stay visible under the
   dock band; **Dock band opacity** 100%, 70%, 50% or 30%. The last two only do anything while the dock is
   its own row (`dock_row`, on by default).
+- **Glass blur**, a slider from None to Max (0 to 10): Left and Right move it and the glass changes at once
+  (`dock_blur` in a theme).
 - **Clock**: **System** follows the TV's 12- or 24-hour setting; **12-hour** or **24-hour** sets the launcher's
   clocks (Home and the clock screensaver) to that, whatever the TV uses (`clock_format` in a theme).
 - **Wallpaper**: one picture from the theme's collection (or its `wallpaper.jpg`), **None**, or **Theme

@@ -24,6 +24,7 @@ import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -66,6 +67,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.TextClock;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -145,6 +147,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private RecyclerView grid;
     private FrameLayout root;
     private WallpaperPlayer wallpaperPlayer;
+    private BlurBackdropView backdropBlur;
+    /** The dock band's decoration; the dock blur takes its exact rounded shape from it. */
+    private DockDecoration dockDecoration;
+    /** The blur is showing under the dock band (dock or Settings focused), so it follows the band when it moves. */
+    private boolean dockBlurActive;
+    private final RectF dockBlurRect = new RectF();
+    private final Rect gridOffset = new Rect();
+    /** The grid's top-left in root coordinates, for the dock glass painted from the grid's own draw pass. */
+    private final Rect gridOrigin = new Rect();
+    /** The Settings button's shape in root coordinates, frosted with the dock's blur behind it. */
+    private final Rect settingsButtonRect = new Rect();
+    private final RectF settingsBlurRect = new RectF();
+    private final Rect clockRect = new Rect();
+    /** tvOS time pill: the gear's size inside it, and the glass around the gear. */
+    private static final float TVOS_PILL_BUTTON_DP = 36, TVOS_PILL_INSET_DP = 4;
     private GlassView glass;
     private View ambient;
     private TextView heroName;
@@ -264,6 +281,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean singleRow;
     /** The highlight springs past its target (config.xml, focus_overshoot); false goes straight there. */
     private boolean focusOvershoot;
+    /** The focused app tile carries the focus motion itself; the floating glass stays hidden. */
+    private boolean tvosFocus;
+    /** tvOS Home (config tvos_home): the grid runs full screen behind the header and peeks under the dock. */
+    private boolean tvosHome;
+    private int gridPeekPx;
+    /** Launcher settings' blur level (config dock_blur), shared by the backdrop and the menus' frost. */
+    private int dockBlurLevel;
+    /** config liquid_glass: the dock band, the gear and the menus get LiquidGlass's lens rim and light. */
+    private boolean liquidGlass;
+    /** tvOS Home with focus in the grid: the dock is slid to the top, the header is hidden, the wallpaper blurred. */
+    private boolean homeGridMode;
     /** Festive skin from the theme (see Festival); applied while it is active today. */
     private Festival festival = Festival.NONE;
     private boolean festive;
@@ -443,6 +471,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (festive) updateWifiLabel();
             sky.update();
             wallpaperPlayer.update();
+            if (backdropBlur != null) backdropBlur.setSource(wallpaperPlayer.currentBitmap());
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -479,6 +508,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         dockRow = cfg.dockRow;
         singleRow = cfg.singleRow;
         focusOvershoot = cfg.focusOvershoot;
+        tvosFocus = cfg.tvosFocus;
+        tvosHome = cfg.tvosHome && cfg.dockRow && !cfg.singleRow;
         festival = cfg.festival;
         festive = festival.active(LocalDate.now());
         liveTvPkg = cfg.liveTvPackage;
@@ -508,9 +539,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // the theme's background, so launch looks the same.
         getWindow().setBackgroundDrawable(null);
         wallpaperPlayer = new WallpaperPlayer(this, root, cfg);
+        backdropBlur = findViewById(R.id.backdropBlur);
+        dockBlurLevel = cfg.dockBlur;
+        backdropBlur.setLevel(cfg.dockBlur);
+        liquidGlass = cfg.liquidGlass;
+        backdropBlur.setLiquidGlass(cfg.liquidGlass);
+        backdropBlur.setSource(wallpaperPlayer.currentBitmap());
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
+        if (tvosFocus) glass.setVisibility(View.INVISIBLE);
         glass.setStyle(cfg.glassStyle);
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);
@@ -548,6 +586,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 && !cfg.topMenu && !getResources().getBoolean(R.bool.rtl_menu_bar)) {
             centerCompactHeader();
         }
+        if (tvosHome) moveClockTopRight();
         if (cfg.headerWhite) {
             // The clock's own white for the date and the line before it, instead of their dimmed whites.
             ((TextView) findViewById(R.id.date)).setTextColor(Color.WHITE);
@@ -611,6 +650,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         libraryExcludedApps = new HashSet<>(cfg.libraryExcludedApps);
 
         grid = findViewById(R.id.grid);
+        if (tvosHome) {
+            // The grid's clipping wrapper leaves the header's column and fills the screen under the header, so the
+            // dock can slide up to where the clock was. The top padding below still parks the dock low on Home.
+            View wrapper = (View) grid.getParent();
+            ViewGroup column = (ViewGroup) wrapper.getParent();
+            column.removeView(wrapper);
+            // The same side margins the header column gave it, so the dock lines up with the clock and the gear.
+            FrameLayout.LayoutParams full = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            full.setMarginStart(column.getPaddingStart());
+            full.setMarginEnd(column.getPaddingEnd());
+            root.addView(wrapper, root.indexOfChild(column), full);
+            gridPeekPx = (int) (cfg.gridPeek * density);
+        }
         rtlAppGrid = getResources().getBoolean(R.bool.rtl_app_grid);
         // Mirror only the app grid; the header and other locales keep their own layouts.
         // single_row: one span laid out sideways, so the same adapter, glass and dock band serve a scrolling row.
@@ -650,6 +703,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     return true;
                 }
                 if (dockRow && getPosition(child) < COLUMNS) return false;
+                // tvOS Home: the first move into the grid is onTileFocused's slide of the whole Home, not this nudge.
+                if (tvosHome && !homeGridMode) return false;
                 int top = child.getTop() + rect.top;
                 int bottom = top + rect.height();
                 // A row already fully on screen stays put, even inside the bottom padding (the last row
@@ -657,7 +712,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 // in still stops at the padding line, clear of the screen edge, as before.
                 int limitBottom = getHeight() - getPaddingBottom();
                 int dy;
-                if (top < 0) dy = top;
+                int limitTop = tvosHome ? (int) (TVOS_TOP_DP * density) : 0;
+                if (top < limitTop) dy = top - limitTop;
                 else if (bottom <= getHeight()) dy = 0;
                 else dy = Math.min(top, bottom - limitBottom);
                 if (dy == 0) return false;
@@ -683,8 +739,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public void onChildViewDetachedFromWindow(@NonNull View v) {
             }
         });
-        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding, cfg.dockBand,
-                singleRow, cfg.dockBandAll));
+        if (dockRow) {
+            dockDecoration = new DockDecoration(COLUMNS, density, cinematic, false, cfg.dockOpacity, cfg.dockGlass,
+                    cfg.dockEvenPadding, cfg.dockBand, singleRow, cfg.dockBandAll);
+            // Called from the grid's draw pass: apply on the next frame rather than invalidating mid-draw.
+            dockDecoration.setBandListener(() -> {
+                if (dockBlurActive) root.post(this::applyDockBlur);
+            });
+            if (cfg.liquidGlass) {
+                // The dock's liquid glass is painted with the tiles, at the band's exact place on every frame.
+                dockDecoration.setGlassPainter((c, band, radius) -> {
+                    gridOrigin.set(0, 0, 0, 0);
+                    root.offsetDescendantRectToMyCoords(grid, gridOrigin);
+                    return backdropBlur.paintDockGlass(c, band, radius, gridOrigin.left, gridOrigin.top);
+                });
+                backdropBlur.setOnGlassLayers(grid::invalidate);
+            }
+            grid.addItemDecoration(dockDecoration);
+        }
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {
@@ -721,6 +793,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // A single row never shows the names under its tiles (the title above the row names the app), so the
             // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
+            // tvOS Home: exactly grid_peek of the first grid row's tiles shows at the bottom of the screen, a hint
+            // that there is more below, in place of the usual bottom room.
+            if (tvosHome) want = h - dockRow - gridPeekPx;
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
                 // A vertical grid parks the dock on the new padding line by scrolling (onTileFocused); a sideways
@@ -816,6 +891,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         btnInputs = findViewById(R.id.btnInputs);
         View btnSettings = findViewById(R.id.btnSettings);
+        // Liquid glass: the button is the glass drawn behind it (BlurBackdropView), not the flat frosted pill.
+        if (liquidGlass) btnSettings.setBackgroundResource(R.drawable.pill_bg_liquid);
+        // The Settings button gets the dock's frosted backdrop; it follows the button whenever the top bar lays out.
+        btnSettings.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> v.post(() -> applySettingsButtonBlur(v)));
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> openNetworkPill());
         btnVpn.setOnClickListener(v -> openVpnPill());
@@ -881,6 +960,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             makeIconOnly((TextView) btnSettings);
         }
         if (cfg.iconOnlyInputs) makeIconOnly((TextView) btnInputs);
+        if (tvosHome) {
+            // tvOS's time pill: the gear sits at its right end, where tvOS puts the profile picture, a little smaller
+            // than the other round buttons so the pill around it stays slim.
+            ViewGroup.MarginLayoutParams glp = (ViewGroup.MarginLayoutParams) btnSettings.getLayoutParams();
+            glp.width = glp.height = Math.round(TVOS_PILL_BUTTON_DP * density);
+            glp.setMarginStart(0);
+            btnSettings.setLayoutParams(glp);
+            int pad = Math.round(8 * density);
+            btnSettings.setPaddingRelative(pad, 0, pad, 0);
+        }
         iconOnlyVpn = vpnPill && cfg.iconOnlyVpn;
         if (iconOnlyVpn) {
             vpnPlainBackground = btnVpn.getBackground().getConstantState();
@@ -931,6 +1020,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
             boolean onTile = newF != null && newF.getId() == R.id.card;
             if (!onTile) hideGlass();
+            if (!onTile) {
+                if (newF != null && newF.getId() == R.id.btnSettings) updateSettingsBackdropBlur();
+                else updateBackdropBlur(null, null);
+            }
         });
 
         packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
@@ -1422,6 +1515,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (homeIgnoreChannelKeys && RemoteKeys.isChannelKey(event.getKeyCode())) return true;
+        if (tvosFocus) TvosFocusMotion.noteKey(event);
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
         // taken after that would arm one nothing releases.
@@ -1754,9 +1848,85 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
+    /**
+     * tvOS Home: a small time at the top right, just before the gear, instead of the large clock and date at the left.
+     * The clock keeps ticking through ClockRefresh, which then watches the whole header.
+     */
+    private void moveClockTopRight() {
+        TextClock clock = findViewById(R.id.clock);
+        LinearLayout buttons = findViewById(R.id.topButtons);
+        ((ViewGroup) clock.getParent()).removeView(clock);
+        findViewById(R.id.ampm).setVisibility(View.GONE);
+        findViewById(R.id.date).setVisibility(View.GONE);
+        greeting.setVisibility(View.GONE);
+        if (!ClockFormat.is24(this, clockFormat)) {
+            clock.setFormat12Hour("h:mm a");
+            clock.setFormat24Hour("h:mm a");
+        }
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        clock.setLetterSpacing(0.01f);
+        clock.setTextColor(0xF2FFFFFF);
+        clock.setShadowLayer(0f, 0f, 0f, 0);   // on glass, like tvOS: no drop shadow
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.gravity = Gravity.CENTER_VERTICAL;
+        clp.setMarginEnd((int) (10 * density));
+        buttons.addView(clock, 0, clp);
+        buttons.setGravity(Gravity.CENTER_VERTICAL);
+        // The header has no left block to line up with any more: the time and the gear sit at its top.
+        RelativeLayout.LayoutParams blp = (RelativeLayout.LayoutParams) buttons.getLayoutParams();
+        blp.removeRule(RelativeLayout.ALIGN_BOTTOM);
+        blp.removeRule(RelativeLayout.ALIGN_TOP);
+        blp.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+        blp.bottomMargin = 0;
+        buttons.setLayoutParams(blp);
+        clockRefresh = new ClockRefresh((View) buttons.getParent());
+        // The time's width changes with the minutes: the pill's glass follows it.
+        View gear = findViewById(R.id.btnSettings);
+        clock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> v.post(() -> applySettingsButtonBlur(gear)));
+    }
+
+    /** Top margin, in dp, of the dock's band (or the first visible row) once tvOS Home has slid into the grid. */
+    private static final float TVOS_TOP_DP = 48;
+
+    /** Hides or brings back the header (clock, date, buttons, race panel) as tvOS Home enters or leaves the grid. */
+    private void setHomeGridMode(boolean on) {
+        homeGridMode = on;
+        View header = (View) findViewById(R.id.topButtons).getParent();
+        View[] views = {header, findViewById(R.id.racePanel)};
+        float shift = on ? -24 * density : 0f;
+        for (View v : views) {
+            if (v == null || v.getVisibility() == View.GONE) continue;
+            v.animate().cancel();
+            if (!animations || reducedMotion) {
+                v.setAlpha(on ? 0f : 1f);
+                v.setTranslationY(shift);
+            } else {
+                v.animate().alpha(on ? 0f : 1f).translationY(shift).setDuration(250).start();
+            }
+        }
+        if (on && backdropBlur != null && animations && !reducedMotion) backdropBlur.fadeIn(250);
+    }
+
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
+        // tvOS Home: Back from the grid returns to the dock app in the same column.
+        if (homeGridMode) {
+            int column = Math.max(0, lastFocused) % COLUMNS;
+            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(column);
+            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
+            if (card != null) {
+                card.requestFocus();
+                return;
+            }
+            grid.scrollToPosition(column);
+            grid.post(() -> {
+                RecyclerView.ViewHolder again = grid.findViewHolderForAdapterPosition(column);
+                if (again != null) again.itemView.findViewById(R.id.card).requestFocus();
+            });
+            return;
+        }
         // Home screen: Back goes nowhere, unless back_opens_clock is on.
         if (backOpensClock) startActivity(new Intent(this, ClockActivity.class));
     }
@@ -1810,51 +1980,54 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         Rect r = tileRect;
         r.set(0, 0, card.getWidth(), card.getHeight());
         root.offsetDescendantRectToMyCoords(card, r);
-        float pad = 6f * density;        // matches GlassView's glow inset
-        float scale = adapter.focusScale();
-        float w = card.getWidth() * scale + 2 * pad;
-        float h = card.getHeight() * scale + 2 * pad;
-        float x = r.exactCenterX() - w / 2f;
-        // advanced_effects lifts a focused grid tile by 4dp and the glass follows it; dock tiles stay put (#2135).
-        boolean lifted = advancedEffects && !DockSlots.inDockRow(dockRow, singleRow, position, COLUMNS);
-        float y = r.exactCenterY() - h / 2f - (lifted ? 4f * density : 0f);
+        updateBackdropBlur(card, r);
+        float pad = 6f * density;        // matches GlassView's glow inset and leaves room for a scaled tvOS tile
+        if (!tvosFocus) {
+            float scale = adapter.focusScale();
+            float w = card.getWidth() * scale + 2 * pad;
+            float h = card.getHeight() * scale + 2 * pad;
+            float x = r.exactCenterX() - w / 2f;
+            // advanced_effects lifts a focused grid tile by 4dp and the glass follows it; dock tiles stay put (#2135).
+            boolean lifted = advancedEffects && !DockSlots.inDockRow(dockRow, singleRow, position, COLUMNS);
+            float y = r.exactCenterY() - h / 2f - (lifted ? 4f * density : 0f);
 
-        ViewGroup.LayoutParams lp = glass.getLayoutParams();
-        if (lp.width != (int) w || lp.height != (int) h || card.getWidth() != glassCardW) {
-            lp.width = (int) w;
-            lp.height = (int) h;
-            glass.setLayoutParams(lp);
-            // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
-            glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density) * scale);
-        }
-        glassCardW = card.getWidth();
-        glassCardRect.set(r);
-        glassTargetX = x;
-        glassTargetY = y;
-        // Cinematic shelf: the highlight glows in the dock app's colour, plain white in the grid (and on the dock with
-        // cinematic_white_focus). app_glow: every tile. In a single row every tile is the dock's kind.
-        boolean coloured = (appGlow || cinematic && !cinematicWhiteFocus && (singleRow || position < COLUMNS)) && !festive;
-        int accent = coloured ? adapter.ambientColorAt(position) : 0;
-        if ((cinematic || appGlow) && !festive && accent != glassAccent) {
-            glassAccent = accent;
-            glass.setAccent(accent);
-        }
-        if (!glassShown) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-            if (animations && !reducedMotion) glass.animate().alpha(1f).setDuration(180).start();
-            else glass.setAlpha(1f);
-            glassShown = true;
-        } else if (!animations) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-        } else {
-            springX.animateToFinalPosition(x - glassScrollShiftX);
-            springY.animateToFinalPosition(y - glassScrollShift);
+            ViewGroup.LayoutParams lp = glass.getLayoutParams();
+            if (lp.width != (int) w || lp.height != (int) h || card.getWidth() != glassCardW) {
+                lp.width = (int) w;
+                lp.height = (int) h;
+                glass.setLayoutParams(lp);
+                // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
+                glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density) * scale);
+            }
+            glassCardW = card.getWidth();
+            glassCardRect.set(r);
+            glassTargetX = x;
+            glassTargetY = y;
+            // Cinematic shelf: the highlight glows in the dock app's colour, plain white in the grid (and on the dock with
+            // cinematic_white_focus). app_glow: every tile. In a single row every tile is the dock's kind.
+            boolean coloured = (appGlow || cinematic && !cinematicWhiteFocus && (singleRow || position < COLUMNS)) && !festive;
+            int accent = coloured ? adapter.ambientColorAt(position) : 0;
+            if ((cinematic || appGlow) && !festive && accent != glassAccent) {
+                glassAccent = accent;
+                glass.setAccent(accent);
+            }
+            if (!glassShown) {
+                springX.cancel();
+                springY.cancel();
+                glass.setTranslationX(x);
+                glass.setTranslationY(y);
+                if (animations && !reducedMotion) glass.animate().alpha(1f).setDuration(180).start();
+                else glass.setAlpha(1f);
+                glassShown = true;
+            } else if (!animations) {
+                springX.cancel();
+                springY.cancel();
+                glass.setTranslationX(x);
+                glass.setTranslationY(y);
+            } else {
+                springX.animateToFinalPosition(x - glassScrollShiftX);
+                springY.animateToFinalPosition(y - glassScrollShift);
+            }
         }
         View item = (View) card.getParent();
         if (dockRow && (singleRow || position < COLUMNS)) {
@@ -1870,6 +2043,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             showHero(position, scroll ? r.top - dy : r.top);
+            if (homeGridMode) setHomeGridMode(false);
+        } else if (tvosHome && !homeGridMode) {
+            showGlowOnly(position);
+            setHomeGridMode(true);
+            // Slide the whole Home up until the dock's band sits near the top of the screen, like tvOS.
+            RecyclerView.ViewHolder dock = grid.findViewHolderForAdapterPosition(0);
+            if (dock != null) {
+                int dy = dock.itemView.getTop() - (int) (6 * density) - (int) (TVOS_TOP_DP * density);
+                if (dy != 0) {
+                    if (!animations || reducedMotion) grid.scrollBy(0, dy);
+                    else grid.smoothScrollBy(0, dy, new android.view.animation.DecelerateInterpolator(1.6f));
+                }
+            }
         } else {
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
@@ -1880,9 +2066,78 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    /** Dock-only blur while the Top Shelf is focused; the entire local wallpaper blurs once focus enters the grid. */
+    private void updateBackdropBlur(View focused, Rect tile) {
+        if (backdropBlur == null) return;
+        if (focused == null || tile == null || !dockRow) {
+            dockBlurActive = false;
+            backdropBlur.clear();
+            return;
+        }
+        int position = grid.getChildAdapterPosition((View) focused.getParent());
+        boolean dock = singleRow || position >= 0 && position < COLUMNS;
+        if (!dock) {
+            dockBlurActive = false;
+            backdropBlur.showFullScreen();
+            return;
+        }
+        dockBlurActive = true;
+        applyDockBlur();
+    }
+
+    /** Settings keeps the dock's frosted band, but never turns the rest of the wallpaper into a full-screen blur. */
+    private void updateSettingsBackdropBlur() {
+        if (backdropBlur == null || !dockRow) return;
+        dockBlurActive = true;
+        applyDockBlur();
+    }
+
+    /**
+     * Blurs exactly the dock band as DockDecoration last drew it: same rectangle, same rounded corners. A full-width
+     * strip showed hard-edged blur on both sides of the band and past its rounded ends.
+     */
+    private void applySettingsButtonBlur(View button) {
+        if (backdropBlur == null || isDestroyed()) return;
+        if (button.getVisibility() != View.VISIBLE || button.getWidth() <= 0 || !button.isAttachedToWindow()) {
+            backdropBlur.setButtonRegion(null, 0f);
+            return;
+        }
+        settingsButtonRect.set(0, 0, button.getWidth(), button.getHeight());
+        root.offsetDescendantRectToMyCoords(button, settingsButtonRect);
+        settingsBlurRect.set(settingsButtonRect);
+        View clock = findViewById(R.id.clock);
+        if (tvosHome && clock.getParent() == button.getParent() && clock.getWidth() > 0) {
+            // tvOS's time pill: one capsule of glass round the time and the gear, the gear inset at its right end.
+            clockRect.set(0, 0, clock.getWidth(), clock.getHeight());
+            root.offsetDescendantRectToMyCoords(clock, clockRect);
+            float inset = TVOS_PILL_INSET_DP * density;
+            settingsBlurRect.set(clockRect.left - 14 * density, settingsButtonRect.top - inset,
+                    settingsButtonRect.right + inset, settingsButtonRect.bottom + inset);
+        }
+        backdropBlur.setButtonRegion(settingsBlurRect, settingsBlurRect.height() / 2f);
+    }
+
+    private void applyDockBlur() {
+        if (backdropBlur == null || dockDecoration == null || !dockBlurActive || isDestroyed()) return;
+        if (liquidGlass) {
+            // DockDecoration paints the band's glass itself; the backdrop drawing it as well would double it.
+            backdropBlur.clear();
+            return;
+        }
+        if (!dockDecoration.band(dockBlurRect)) {
+            // The band is not drawn yet (first layout): the decoration's listener applies it once it is.
+            backdropBlur.clear();
+            return;
+        }
+        gridOffset.set(0, 0, 0, 0);
+        root.offsetDescendantRectToMyCoords(grid, gridOffset);
+        dockBlurRect.offset(gridOffset.left, gridOffset.top);
+        backdropBlur.setRoundRegion(dockBlurRect, dockDecoration.bandRadius());
+    }
+
     /** Refits the glass to the focused holder once the grid layout and tile dimensions settle. */
     private void refitGlass() {
-        if (isDestroyed() || adapter.appCount() == 0 || libraryFocusPending) return;
+        if (tvosFocus || isDestroyed() || adapter.appCount() == 0 || libraryFocusPending) return;
         int pos = Math.max(0, Math.min(lastFocused, adapter.appCount() - 1));
         RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
         View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
@@ -3610,6 +3865,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (openPopup == popup) openPopup = null;
         });
         openPopup = popup;
+        // tvOS menus: the panel is frosted glass over a blurred copy of Home, at the dock's blur level.
+        FrostDrawable.apply(this, panel, dockBlurLevel, 20 * density, liquidGlass);
         return popup;
     }
 
@@ -3688,7 +3945,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (220 * density), Math.min(panel.getMeasuredWidth(), (int) (360 * density))));
         dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar) ? Gravity.START : Gravity.END);
-        rows.getChildAt(0).requestFocus();
+        focusFirstMenuRow(rows);
     }
 
     /** The header opens launcher settings directly; hold OK keeps the extra home actions available. */
@@ -3711,6 +3968,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
         if (dockRow) addSettingsMenuRow(rows, popup, R.string.dock_edit, this::startDockEdit);
         addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
+        addSettingsMenuRow(rows, popup, R.string.start_screensaver, this::startScreensaver);
         // A launcher may not restart the TV itself; the Home key helper can open the system power menu instead.
         if (HomeKeyService.canOpenPowerMenu()) addSettingsMenuRow(rows, popup, R.string.power_menu, HomeKeyService::openPowerMenu);
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -3718,7 +3976,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Hebrew puts Settings at the left of the header: grow the menu inward from it.
         dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar)
                 ? Gravity.START : Gravity.END);
-        rows.getChildAt(0).requestFocus();
+        focusFirstMenuRow(rows);
+    }
+
+    /** Focuses a popup's first row. */
+    private void focusFirstMenuRow(LinearLayout rows) {
+        if (rows.getChildCount() > 0) rows.getChildAt(0).requestFocus();
+    }
+
+    /** Starts the TV's configured dream, falling back to CleanYourTV's clock when SystemUI has no launcher. */
+    private void startScreensaver() {
+        Intent dream = new Intent(Intent.ACTION_MAIN)
+                .setClassName("com.android.systemui", "com.android.systemui.Somnambulator");
+        if (getPackageManager().resolveActivity(dream, 0) == null) dream = new Intent(this, ClockActivity.class);
+        open(dream);
     }
 
     /** A tile configured with launch_actions "input:<id>" (config.xml): switch to that TV input directly,

@@ -459,6 +459,21 @@
          "focus_overshoot" in a theme's config.json. -->
     <bool name="focus_overshoot">true</bool>
 
+    <!-- tvOS-style focus: the app tile itself lifts, leans briefly towards the D-pad direction and catches a
+         soft moving highlight; the separate glass focus box stays hidden. Off by default; the shieldos theme
+         sets "tvos_focus": true in config.json. -->
+    <bool name="tvos_focus">false</bool>
+
+    <!-- tvOS Home: the dock sits low with the first grid row peeking under it (grid_peek, dp); Down slides the dock
+         to the top, hides the clock and header and blurs the whole wallpaper. rows_below_dock is ignored. Off by
+         default; a theme can set "tvos_home": true and "grid_peek". -->
+    <bool name="tvos_home">false</bool>
+    <integer name="grid_peek">28</integer>
+    <!-- Liquid Glass on the dock band, the Settings button and the menus: the blurred wallpaper bent along the rim like a lens,
+         a faint colour fringe there and a specular rim lit from the top left. Needs a blur level above 0. Off by
+         default; a theme can set "liquid_glass": true. -->
+    <bool name="liquid_glass">false</bool>
+
     <!-- One line under the clock: CPU, free memory and free storage. Off by default; a theme can set
          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
     <bool name="show_stats">false</bool>

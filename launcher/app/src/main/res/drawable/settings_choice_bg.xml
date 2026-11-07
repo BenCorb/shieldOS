@@ -1,23 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- tvOS style: the focused choice is a white plate with dark text, the chosen one a brighter glass, the rest faint glass. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="#5574A987" />
+            <solid android:color="#F5FFFFFF" />
             <corners android:radius="14dp" />
-            <stroke android:width="2dp" android:color="#FFB9E7C7" />
         </shape>
     </item>
     <item android:state_selected="true">
         <shape android:shape="rectangle">
-            <solid android:color="#334DAE6D" />
+            <solid android:color="#3DFFFFFF" />
             <corners android:radius="14dp" />
-            <stroke android:width="1dp" android:color="#FF4DAE6D" />
+            <stroke android:width="1dp" android:color="#73FFFFFF" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FF242B34" />
+            <solid android:color="#17FFFFFF" />
             <corners android:radius="14dp" />
+            <stroke android:width="1dp" android:color="#1FFFFFFF" />
         </shape>
     </item>
 </selector>

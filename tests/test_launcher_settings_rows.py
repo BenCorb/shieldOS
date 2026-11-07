@@ -63,8 +63,8 @@ def row_labels(layout_text, activity_text, strings):
         style = view.get("style") or ""
         if text.startswith("@string/"):
             # A row that carries its own label (a settings row), or the 20sp caption of a group of
-            # numbered choices. The hints under a row are 14sp and the title is 34sp, so neither is a row.
-            if not (style.endswith("SettingsRow") or attr(view, "textSize") == "20sp"):
+            # numbered choices (18sp or 20sp). The hints under a row are 14sp and the title is 34sp, so neither is a row.
+            if not (style.endswith("SettingsRow") or attr(view, "textSize") in ("18sp", "20sp")):
                 continue
             name = text[len("@string/"):]
         elif style.endswith("SettingsRow"):

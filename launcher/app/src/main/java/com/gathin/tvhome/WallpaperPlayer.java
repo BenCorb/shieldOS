@@ -165,6 +165,11 @@ final class WallpaperPlayer {
         decoder.shutdownNow();
     }
 
+    /** Current decoded wallpaper used by the local backdrop blur; never touches the network. */
+    Bitmap currentBitmap() {
+        return current;
+    }
+
     void update() {
         if (!active || closed || loading || files.isEmpty()) return;
         String previous = preferences.getString("image", "");
