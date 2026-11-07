@@ -66,6 +66,13 @@ public class BlurBackdropView extends View {
     private final Glass dockGlass = new Glass(), buttonGlass = new Glass();
     /** Told when new glass layers are ready, so a view painting the dock glass (the grid) redraws too. */
     private Runnable onLayers;
+    /**
+     * From Android 10 a shader follows a later setLocalMatrix, also inside a ComposeShader, so the glass's shaders are
+     * made once and only moved at each frame. Before that they are made anew at each frame, as they always were.
+     */
+    private static final boolean REUSE_SHADERS = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q;
+    /** LiquidGlass.bend for this screen, in px. */
+    private final float bendPx;
 
     void setOnGlassLayers(Runnable listener) {
         onLayers = listener;
@@ -85,6 +92,11 @@ public class BlurBackdropView extends View {
     private static final class Glass {
         Bitmap lens, light;
         BitmapShader lensShader;
+        /** API 29+: the bent picture's shader and its mix with the lens, kept while sharp and the lens stay the same. */
+        BitmapShader bent;
+        Bitmap bentFor;
+        android.graphics.ComposeShader compose;
+        BitmapShader composeLens;
         float madeW, madeH, madeRadius;
         float wantedW, wantedH, wantedRadius;
         boolean busy;
@@ -95,6 +107,7 @@ public class BlurBackdropView extends View {
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         setWillNotDraw(false);
         setAlpha(0f);
+        bendPx = LiquidGlass.bend(getResources().getDisplayMetrics().density);
     }
 
     void setLiquidGlass(boolean on) {
@@ -453,18 +466,37 @@ public class BlurBackdropView extends View {
         sharpShader.setLocalMatrix(sharpMatrix);
         // The rim's bend: the picture scaled down about the shape's centre, so a point at the rim shows what lies
         // LiquidGlass.bend further in, as a thick lens edge does. The lens layer keeps it to the rim.
-        float bend = LiquidGlass.bend(getResources().getDisplayMetrics().density);
+        float bend = bendPx;
         float kx = Math.max(0.5f, 1f - bend / Math.max(1f, shape.width() / 2f));
         float ky = Math.max(0.5f, 1f - bend / Math.max(1f, shape.height() / 2f));
         lensMatrix.set(sharpMatrix);
         lensMatrix.postScale(1f / kx, 1f / ky, shape.centerX(), shape.centerY());
-        BitmapShader bent = new BitmapShader(sharp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        BitmapShader bent;
+        if (!REUSE_SHADERS) {
+            bent = new BitmapShader(sharp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        } else {
+            if (glass.bent == null || glass.bentFor != sharp) {
+                glass.bent = new BitmapShader(sharp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                glass.bentFor = sharp;
+                glass.compose = null;
+            }
+            bent = glass.bent;
+        }
         bent.setLocalMatrix(lensMatrix);
         maskMatrix.setScale(shape.width() / glass.lens.getWidth(), shape.height() / glass.lens.getHeight());
         maskMatrix.postTranslate(shape.left, shape.top);
         glass.lensShader.setLocalMatrix(maskMatrix);
-        lensPaint.setShader(new android.graphics.ComposeShader(bent, glass.lensShader,
-                android.graphics.PorterDuff.Mode.DST_IN));
+        if (!REUSE_SHADERS) {
+            lensPaint.setShader(new android.graphics.ComposeShader(bent, glass.lensShader,
+                    android.graphics.PorterDuff.Mode.DST_IN));
+        } else {
+            if (glass.compose == null || glass.composeLens != glass.lensShader) {
+                glass.compose = new android.graphics.ComposeShader(bent, glass.lensShader,
+                        android.graphics.PorterDuff.Mode.DST_IN);
+                glass.composeLens = glass.lensShader;
+            }
+            lensPaint.setShader(glass.compose);
+        }
         canvas.drawRoundRect(shape, radius, radius, lensPaint);
         canvas.drawRoundRect(shape, radius, radius, shadePaint);
         canvas.drawBitmap(glass.light, null, shape, lightPaint);
