@@ -21,3 +21,8 @@ bench-results/
 *.aab
 launcher/hs_err_pid*.log
 launcher/replay_pid*.log
+
+# shieldOS fork: everything about your own Shield (IP, dock, wallpaper, backups, APKs, notes) stays local.
+/local/
+CLAUDE.local.md
+AGENTS.local.md

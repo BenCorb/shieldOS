@@ -40,7 +40,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Same walk as tests/test_markdown_links.py: the tools venv CI builds and a launcher build are not docs.
-PRUNE = {".git", "venv", "node_modules", "build", ".gradle", "__pycache__"}
+PRUNE = {".git", "venv", "node_modules", "build", ".gradle", "__pycache__",
+         "local"}  # local/: the shieldOS fork's own Shield, gitignored
 SUFFIXES = (".md", ".txt", ".sh", ".ps1")
 # The list a command hands to the script: `tools/restore.sh examples/x/debloat.txt com.stock.launcher`,
 # `tools/restore.sh "examples/x/debloat.txt"`, and the PowerShell twin with a Windows path, also after

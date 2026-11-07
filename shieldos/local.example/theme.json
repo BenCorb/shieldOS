@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to local/theme.json. Every key here overrides shieldos/theme.json; keys starting with _ are ignored. See themes/README.md for every key.",
+  "dock_apps": [
+    "com.netflix.ninja",
+    "org.smarttube.stable",
+    "com.plexapp.android",
+    "com.apple.atve.androidtv.appletv",
+    "tv.twitch.android.app",
+    "com.disney.disneyplus"
+  ],
+  "wallpaper": true,
+  "wallpaper_dim": 20,
+  "wallpaper_true_color": true,
+  "sky_intensity": 0
+}
