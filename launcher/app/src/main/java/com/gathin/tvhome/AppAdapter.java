@@ -696,6 +696,18 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return e.banner != null ? e.banner : e.icon;
     }
 
+    /** tvos_focus: pauses (Home stopped) or resumes (Home visible again) the focused tile's endless sway. */
+    void setFocusMotionPaused(RecyclerView grid, boolean paused) {
+        if (!tvosFocus) return;
+        TvosFocusMotion.setHomeHidden(paused);
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            RecyclerView.ViewHolder vh = grid.getChildViewHolder(grid.getChildAt(i));
+            if (!(vh instanceof Holder)) continue;
+            if (paused) ((Holder) vh).motion.pause();
+            else ((Holder) vh).motion.resume();
+        }
+    }
+
     float focusScale() {
         if (tvosFocus) return !animations ? 1.10f : reducedMotion ? 1.08f : TvosFocusMotion.SCALE;
         return !animations ? 1f : advancedEffects ? 1.12f : 1.10f;

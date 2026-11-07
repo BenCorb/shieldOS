@@ -29,6 +29,9 @@ final class TvosFocusMotion {
     private final TileShadowView shadow;
     private final float density;
     private ValueAnimator sway;
+    /** Home is stopped (pause()): a sway asked for meanwhile, by a focus move's end action, waits for resume(). */
+    private static boolean homeHidden;
+    private boolean swayPending;
 
     TvosFocusMotion(View card, View shine, TileShadowView shadow, float density) {
         this.card = card;
@@ -144,6 +147,10 @@ final class TvosFocusMotion {
     private void startSway() {
         stopSway();
         if (!card.isFocused()) return;
+        if (homeHidden) {
+            swayPending = true;
+            return;
+        }
         final float baseX = shine.getTranslationX(), baseY = shine.getTranslationY();
         sway = ValueAnimator.ofFloat(0f, (float) (2 * Math.PI));
         sway.setDuration(SWAY_MS);
@@ -162,7 +169,34 @@ final class TvosFocusMotion {
         sway.start();
     }
 
+    /**
+     * Home is no longer visible (onStop): the endless sway would keep waking the launcher at every frame behind the
+     * app on screen. It holds its place and picks up from there in resume(). Home-wide, through setHomeHidden: a holder
+     * resting in the pool while Home was stopped sways again once it is bound and focused.
+     */
+    void pause() {
+        if (sway != null && sway.isRunning()) sway.pause();
+    }
+
+    /** Home is visible again (onStart): the sway goes on where pause() left it. */
+    void resume() {
+        boolean pending = swayPending;
+        swayPending = false;
+        if (sway != null) {
+            if (card.isFocused()) sway.resume();
+            else stopSway();
+        } else if (pending) {
+            startSway();
+        }
+    }
+
+    /** Home's visibility, for every holder, also the ones not attached when it changed. */
+    static void setHomeHidden(boolean hidden) {
+        homeHidden = hidden;
+    }
+
     private void stopSway() {
+        swayPending = false;
         if (sway == null) return;
         sway.cancel();
         sway = null;
