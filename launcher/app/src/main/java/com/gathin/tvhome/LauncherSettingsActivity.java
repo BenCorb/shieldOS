@@ -55,7 +55,7 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
         // tvOS settings sit over the blurred wallpaper, darkened so the text stays readable.
-        android.graphics.Bitmap backdrop = BlurBackdropView.copyOfLatest();
+        android.graphics.Bitmap backdrop = BlurBackdropView.latestBlur();
         if (backdrop != null) {
             android.graphics.drawable.BitmapDrawable blurred =
                     new android.graphics.drawable.BitmapDrawable(getResources(), backdrop);

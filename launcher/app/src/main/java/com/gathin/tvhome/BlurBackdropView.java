@@ -37,10 +37,10 @@ public class BlurBackdropView extends View {
     private boolean fullScreen;
     private Bitmap sourceRef;
     private Bitmap blurred;
-    private RenderScript renderScript;
-    private Allocation input;
-    private Allocation output;
-    private ScriptIntrinsicBlur blur;
+    /** Counts rebuildBlur() calls: a blur made on the worker for an older one is dropped instead of shown. */
+    private int generation;
+    /** The view size the latest blur was asked for; onSizeChanged rebuilds only for another one. */
+    private int builtW, builtH;
     /** Launcher settings' blur level (config dock_blur): 0 is clear glass, MAX_LEVEL the most frosted. */
     private int level = 3;
     static final int MAX_LEVEL = 10;
@@ -70,8 +70,16 @@ public class BlurBackdropView extends View {
     void setOnGlassLayers(Runnable listener) {
         onLayers = listener;
     }
-    private static final java.util.concurrent.ExecutorService GLASS_WORKER =
+    /**
+     * The glass's one background thread: blurs (backdrop and menus) and LiquidGlass layers, in the order asked. Its
+     * RenderScript context is made once, on first use, and only ever used from this thread.
+     */
+    static final java.util.concurrent.ExecutorService GLASS_WORKER =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private static RenderScript workerRs;
+    private static ScriptIntrinsicBlur workerBlur;
+    /** RenderScript could not start on this TV: blur() returns null at once, and the glass tint is the fallback. */
+    private static boolean workerRsFailed;
 
     /** One shape's size-bound glass layers: what they were made for, and whether newer ones are being made. */
     private static final class Glass {
@@ -125,11 +133,6 @@ public class BlurBackdropView extends View {
     /** ScriptIntrinsicBlur radius for a level (RenderScript caps it at 25); 0 means the picture is not blurred. */
     static float radius(int level) {
         return RADIUS[Math.max(0, Math.min(MAX_LEVEL, level))];
-    }
-
-    /** Blur passes for a level; one is enough now that the strongest level was softened. */
-    static int passes(int level) {
-        return 1;
     }
 
     /** Frosts a top-bar button's rounded shape (this view's coordinates); null or empty removes it. */
@@ -230,34 +233,50 @@ public class BlurBackdropView extends View {
         animate().alpha(1f).setDuration(duration).start();
     }
 
-    /** Blurs a small bitmap once (popup frost), or null when RenderScript is unavailable. The source is left alone. */
+    /**
+     * Blurs a small bitmap (backdrop, popup frost), or null when RenderScript is unavailable. The source is left
+     * alone. GLASS_WORKER only: the RenderScript context it keeps is not shared with any other thread.
+     */
     static Bitmap blur(android.content.Context context, Bitmap small, float radius) {
-        RenderScript rs = null;
+        if (workerRsFailed) return null;
+        Allocation in = null, out = null;
         try {
-            rs = RenderScript.create(context.getApplicationContext());
-            Allocation in = Allocation.createFromBitmap(rs, small);
-            Allocation out = Allocation.createTyped(rs, in.getType());
-            ScriptIntrinsicBlur script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs));
-            script.setRadius(Math.max(1f, Math.min(25f, radius)));
-            script.setInput(in);
-            script.forEach(out);
+            if (workerRs == null) {
+                RenderScript rs = RenderScript.create(context.getApplicationContext());
+                try {
+                    workerBlur = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs));
+                } catch (Throwable t) {
+                    rs.destroy();
+                    throw t;
+                }
+                workerRs = rs;
+            }
+            in = Allocation.createFromBitmap(workerRs, small);
+            out = Allocation.createTyped(workerRs, in.getType());
+            workerBlur.setRadius(Math.max(1f, Math.min(25f, radius)));
+            workerBlur.setInput(in);
+            workerBlur.forEach(out);
             Bitmap result = Bitmap.createBitmap(small.getWidth(), small.getHeight(), Bitmap.Config.ARGB_8888);
             out.copyTo(result);
-            script.destroy();
-            in.destroy();
-            out.destroy();
             return result;
         } catch (Throwable ignored) {
+            // RenderScript is deprecated but still present on API 30. If a vendor removes it, the glass tint
+            // remains a safe fallback and the launcher continues without a crash.
+            if (workerRs == null) workerRsFailed = true;
             return null;
         } finally {
-            if (rs != null) rs.destroy();
+            if (in != null) in.destroy();
+            if (out != null) out.destroy();
         }
     }
 
-    /** The blurred wallpaper, or null; a copy, so Launcher settings can use it as its backdrop. */
-    static Bitmap copyOfLatest() {
+    /**
+     * The blurred wallpaper, or null. It is never recycled or changed once made (a newer blur replaces it), so
+     * Launcher settings and the menus can draw it as it is.
+     */
+    static Bitmap latestBlur() {
         Bitmap b = latest;
-        return b == null || b.isRecycled() ? null : b.copy(Bitmap.Config.ARGB_8888, false);
+        return b == null || b.isRecycled() ? null : b;
     }
 
     private static Bitmap latest;
@@ -269,80 +288,91 @@ public class BlurBackdropView extends View {
         return latestSharp;
     }
 
+    /**
+     * Makes the blurred (and, for liquid_glass, the sharper) wallpaper on GLASS_WORKER and shows it once ready, so
+     * neither Home's first frame nor a wallpaper change waits on it. The glass shown meanwhile stays: the previous
+     * blur, or the plain band and tint before the first one.
+     */
     private void rebuildBlur() {
-        releaseBlur();
-        if (sourceRef == null || getWidth() <= 0 || getHeight() <= 0) {
+        final int gen = ++generation;
+        final Bitmap source = sourceRef;
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        // Before the first layout the view's size is not known yet: it fills the screen, so start with that.
+        final int w = getWidth() > 0 ? getWidth() : dm.widthPixels;
+        final int h = getHeight() > 0 ? getHeight() : dm.heightPixels;
+        builtW = w;
+        builtH = h;
+        if (source == null || w <= 0 || h <= 0) {
+            releaseBlur();
             invalidate();
             return;
         }
+        final int lvl = level;
+        final boolean wantSharp = liquid;
+        final android.content.Context app = getContext().getApplicationContext();
+        GLASS_WORKER.execute(() -> {
+            Bitmap[] made = makeBlur(app, source, w, h, lvl, wantSharp);
+            post(() -> {
+                if (gen != generation || made == null) return;
+                installBlur(made[0], made[1]);
+            });
+        });
+    }
+
+    /** GLASS_WORKER: the blurred picture at the level's size, and the sharper half-size one (or null); null on failure. */
+    private static Bitmap[] makeBlur(android.content.Context context, Bitmap source, int viewW, int viewH, int level,
+                                     boolean wantSharp) {
         try {
+            if (source.isRecycled()) return null;
             // A small working bitmap (1/4 to 1/10 of the view, by level) keeps the expensive RenderScript pass small
-            // while the final scaled image remains visibly soft on a 1080p/4K Shield output.
-            int width = Math.max(1, getWidth() / downscale(level));
-            int height = Math.max(1, getHeight() / downscale(level));
-            Bitmap software = sourceRef.copy(Bitmap.Config.ARGB_8888, false);
-            if (software == null) return;
+            // while the final scaled image remains visibly soft on a 1080p/4K Shield output. The wallpaper is a
+            // hardware bitmap: read it back once, here, off the UI thread.
+            int width = Math.max(1, viewW / downscale(level));
+            int height = Math.max(1, viewH / downscale(level));
+            Bitmap software = source.getConfig() == Bitmap.Config.HARDWARE
+                    ? source.copy(Bitmap.Config.ARGB_8888, false) : source;
+            if (software == null) return null;
             Bitmap small = Bitmap.createScaledBitmap(software, width, height, true);
-            if (liquid) {
-                Bitmap half = Bitmap.createScaledBitmap(software, Math.max(1, getWidth() / 2),
-                        Math.max(1, getHeight() / 2), true);
+            Bitmap sharp = null;
+            if (wantSharp) {
+                Bitmap half = Bitmap.createScaledBitmap(software, Math.max(1, viewW / 2), Math.max(1, viewH / 2), true);
                 // Barely blurred: the detail the glass's rim bends, sharper than its middle at most levels.
-                Bitmap soft = blur(getContext(), half, 2f);
+                Bitmap soft = blur(context, half, 2f);
                 if (soft != null && half != software) half.recycle();
-                // The previous one is left to the garbage collector: a queued frame may still draw it.
                 sharp = soft != null ? soft : half;
-                sharpShader = new BitmapShader(sharp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-                latestSharp = sharp;
             }
-            if (small != software) software.recycle();
-            if (radius(level) <= 0f) {
-                // Level 0: clear glass, the wallpaper itself without any blur.
-                blurred = small;
-                latest = blurred;
-                updateShader();
-                invalidate();
-                return;
-            }
-            renderScript = RenderScript.create(getContext().getApplicationContext());
-            input = Allocation.createFromBitmap(renderScript, small);
-            output = Allocation.createTyped(renderScript, input.getType());
-            blur = ScriptIntrinsicBlur.create(renderScript, Element.U8_4(renderScript));
-            blur.setRadius(radius(level));
-            // Further passes blur the previous result back into the other allocation (ping-pong).
-            Allocation from = input, to = output;
-            for (int pass = 0; pass < passes(level); pass++) {
-                blur.setInput(from);
-                blur.forEach(to);
-                Allocation done = to;
-                to = from;
-                from = done;
-            }
-            blurred = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-            from.copyTo(blurred);
-            latest = blurred;
-            small.recycle();
-            updateShader();
+            if (software != source && small != software && sharp != software) software.recycle();
+            if (radius(level) <= 0f) return new Bitmap[]{small, sharp};   // level 0: clear glass, no blur at all
+            Bitmap result = blur(context, small, radius(level));
+            if (result == null) return null;
+            if (small != software && small != source) small.recycle();
+            return new Bitmap[]{result, sharp};
         } catch (Throwable ignored) {
-            // RenderScript is deprecated but still present on API 30. If a vendor removes it, the glass tint below
-            // remains a safe fallback and the launcher continues without a crash.
-            releaseBlur();
+            return null;
         }
+    }
+
+    /** UI thread: shows a blur made by makeBlur. The previous bitmaps are left to the GC: a queued frame may draw them. */
+    private void installBlur(Bitmap newBlurred, Bitmap newSharp) {
+        blurred = newBlurred;
+        latest = newBlurred;
+        if (newSharp != null) {
+            sharp = newSharp;
+            sharpShader = new BitmapShader(sharp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            latestSharp = sharp;
+        }
+        updateShader();
         invalidate();
+        // The dock's liquid glass is painted by the grid: it redraws with the new pictures too.
+        if (onLayers != null) onLayers.run();
     }
 
     private void releaseBlur() {
-        if (blur != null) blur.destroy();
-        if (input != null) input.destroy();
-        if (output != null) output.destroy();
-        if (renderScript != null) renderScript.destroy();
-        blur = null;
-        input = null;
-        output = null;
-        renderScript = null;
         blurPaint.setShader(null);
         if (latest == blurred) latest = null;
-        if (blurred != null) blurred.recycle();
+        // Not recycled: Launcher settings or a menu may still draw it (latestBlur), and a queued frame too.
         blurred = null;
+        baseShader = null;
     }
 
     /** Stretches the small blurred bitmap over the whole view, so a shape drawn with it lines up with the wallpaper. */
@@ -362,7 +392,10 @@ public class BlurBackdropView extends View {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         if (enabled && !fullScreen) region.intersect(0, 0, w, h);
-        if (sourceRef != null && (w != oldw || h != oldh)) rebuildBlur();
+        if (sourceRef == null) return;
+        // The blur started before the first layout was made for this size already: it only needs lining up.
+        if (w != builtW || h != builtH) rebuildBlur();
+        else updateShader();
     }
 
     @Override
@@ -481,6 +514,7 @@ public class BlurBackdropView extends View {
 
     @Override
     protected void onDetachedFromWindow() {
+        generation++;   // a blur still being made is not shown
         releaseBlur();
         super.onDetachedFromWindow();
     }

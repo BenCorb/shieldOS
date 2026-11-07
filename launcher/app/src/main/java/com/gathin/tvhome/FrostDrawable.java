@@ -91,7 +91,7 @@ final class FrostDrawable extends Drawable {
         int w = decor.getWidth(), h = decor.getHeight();
         if (w <= 0 || h <= 0) return;
         float density = activity.getResources().getDisplayMetrics().density;
-        Bitmap wallpaper = BlurBackdropView.copyOfLatest();
+        Bitmap wallpaper = BlurBackdropView.latestBlur();
         Bitmap wallpaperSharp = liquid ? BlurBackdropView.latestSharp() : null;
         final FrostDrawable[] glass = new FrostDrawable[1];
         if (wallpaper != null) {
@@ -102,25 +102,34 @@ final class FrostDrawable extends Drawable {
         // Liquid glass wants a sharper copy for its rim: take the window at half size, and shrink it for the frost.
         int copyDs = liquid ? 2 : ds;
         Bitmap copy = Bitmap.createBitmap(Math.max(1, w / copyDs), Math.max(1, h / copyDs), Bitmap.Config.ARGB_8888);
+        android.content.Context app = activity.getApplicationContext();
         try {
             PixelCopy.request(activity.getWindow(), copy, result -> {
                 if (result != PixelCopy.SUCCESS || activity.isFinishing()) return;
-                Bitmap small = copy;
-                if (liquid) small = Bitmap.createScaledBitmap(copy, Math.max(1, w / ds), Math.max(1, h / ds), true);
-                float r = BlurBackdropView.radius(level);
-                // Level 0 is clear glass: the copy itself, unblurred.
-                Bitmap frost = r > 0f ? BlurBackdropView.blur(activity, small, r)
-                        : small.copy(Bitmap.Config.ARGB_8888, false);
-                Bitmap sharp = liquid ? BlurBackdropView.blur(activity, copy, 2f) : null;
-                if (liquid && sharp == null) sharp = copy;
-                if (frost == null) return;
-                // Bitmaps a frame may still draw are left to the garbage collector rather than recycled.
-                if (glass[0] != null) {
-                    glass[0].setPictures(frost, sharp);
-                    glass[0].invalidateSelf();
-                } else {
-                    panel.setBackground(new FrostDrawable(panel, frost, sharp, w, h, radiusPx, density, liquid));
-                }
+                // The blurs run on the glass's worker, not here on the UI thread, where they held up the drop-in.
+                BlurBackdropView.GLASS_WORKER.execute(() -> {
+                    Bitmap small = copy;
+                    if (liquid) small = Bitmap.createScaledBitmap(copy, Math.max(1, w / ds), Math.max(1, h / ds), true);
+                    float r = BlurBackdropView.radius(level);
+                    // Level 0 is clear glass: the copy itself, unblurred.
+                    Bitmap frost = r > 0f ? BlurBackdropView.blur(app, small, r)
+                            : small.copy(Bitmap.Config.ARGB_8888, false);
+                    Bitmap sharp = liquid ? BlurBackdropView.blur(app, copy, 2f) : null;
+                    if (liquid && sharp == null) sharp = copy;
+                    if (frost == null) return;
+                    final Bitmap madeSharp = sharp;
+                    panel.post(() -> {
+                        if (activity.isFinishing() || !panel.isAttachedToWindow()) return;
+                        // Bitmaps a frame may still draw are left to the garbage collector rather than recycled.
+                        if (glass[0] != null) {
+                            glass[0].setPictures(frost, madeSharp);
+                            glass[0].invalidateSelf();
+                        } else {
+                            panel.setBackground(new FrostDrawable(panel, frost, madeSharp, w, h, radiusPx, density,
+                                    liquid));
+                        }
+                    });
+                });
             }, new Handler(Looper.getMainLooper()));
         } catch (IllegalArgumentException e) {
             // The window has no surface yet: the wallpaper glass, if any, stays.
