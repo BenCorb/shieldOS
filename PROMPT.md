@@ -20,7 +20,8 @@ My TV model is: <MODEL NAME HERE>. Work on the real device, step by step, and ve
 do with screenshots pulled from the TV. Ask me before anything that depends on my preferences.
 Where these steps name a file under `tools/`, `docs/` or `examples/` that is not in your working
 folder, you are running without this repo: clone it first with
-`git clone https://github.com/Gathin23/cleanyourtv` and work from there, so `tools/disable.sh` and the
+`git clone https://github.com/BenCorb/shieldOS` (a fork of
+https://github.com/Gathin23/cleanyourtv) and work from there, so `tools/disable.sh` and the
 rest keep their safety checks, rather than stopping or writing your own.
 
 Connect

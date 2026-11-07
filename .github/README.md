@@ -80,30 +80,39 @@ git clone https://github.com/BenCorb/shieldOS.git && cd shieldOS
 python3 -m venv tools/venv && tools/venv/bin/pip install -r tools/requirements.txt
 ```
 
-1. **Debloat** (optional, reversible). The SHIELD list from upstream is conservative and documents what to keep:
-
-   ```bash
-   TV_HOST=<shield ip> tools/disable.sh examples/nvidia-shield-tv-pro-2019/debloat.txt
-   ```
-
-2. **Build and install the launcher** (it becomes Home only once it has started successfully):
+1. **Build and install the launcher** (it becomes Home only once it has started successfully):
 
    ```bash
    cd launcher && TV_HOST=<shield ip> ./build-and-install.sh && cd ..
+   ```
+
+2. **Debloat** (optional, reversible), once the launcher is Home: the list ends with the stock launcher, and
+   `tools/disable.sh` refuses to disable the app that owns Home while nothing else can take over. The SHIELD
+   list from upstream is conservative and documents what to keep:
+
+   ```bash
+   TV_HOST=<shield ip> tools/disable.sh examples/nvidia-shield-tv-pro-2019/debloat.txt
    ```
 
 3. **Set up your local overrides and push the look:**
 
    ```bash
    mkdir -p local
-   cp shieldos/local.example/shield.env.example local/shield.env           # set TV_HOST
-   cp shieldos/local.example/theme.json local/theme.json     # set your dock
-   shieldos/wallpaper.sh ~/Pictures/some-photo.jpg                         # optional
+   cp shieldos/local.example/shield.env.example local/shield.env   # set TV_HOST
+   cp shieldos/local.example/theme.json local/theme.json           # set your dock
+   shieldos/wallpaper.sh ~/Pictures/some-photo.jpg                 # optional
    shieldos/apply.sh --dry-run && shieldos/apply.sh
    ```
 
-The rest of upstream's tooling (add-ons, `tools/manage.py`, `tools/check.py`, the coding-agent quick start in
-[`AGENTS.md`](../AGENTS.md)) works unchanged — see the [upstream README](../README.md).
+The rest of upstream's tooling (add-ons, `tools/manage.py`, `tools/check.py`) works unchanged — see the
+[upstream README](../README.md). With a coding agent, point it at [`PROMPT.md`](../PROMPT.md) from this checkout:
+[`AGENTS.md`](../AGENTS.md) tells it to keep your dock and wallpaper in `local/` and push with `shieldos/apply.sh`.
+
+### Reporting problems
+
+Bugs in what this fork adds (the keys above, `shieldos/`) belong here. Anything that also happens on upstream
+CleanYourTV — debloat lists, a TV model, the tools — is best reported
+[upstream](https://github.com/Gathin23/cleanyourtv/issues), where the TV knowledge lives.
 
 ---
 
@@ -207,7 +216,7 @@ until you remove it from *Settings › Apps*.
 
 | Path | Origin |
 |---|---|
-| `shieldos/` | **fork** — the theme, `apply.sh`, `wallpaper.sh`, the `local/` template |
+| `shieldos/` | **fork** — the theme, `apply.sh`, `wallpaper.sh`, the `local/` template, notes for coding agents (`shieldos/AGENTS.md`) |
 | `.github/README.md` | **fork** — this page |
 | `tests/test_shieldos_fork.py` | **fork** — theme validity, `local/` stays ignored |
 | `launcher/…/BlurBackdropView.java`, `LiquidGlass.java`, `FrostDrawable.java`, `TvosFocusMotion.java`, `TileShadow*.java` | **fork** |
