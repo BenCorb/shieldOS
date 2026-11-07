@@ -23,6 +23,18 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            optimization {
+                keepRules {
+                    // RecyclerView's own rules keep every LayoutManager's constructors for layouts that name one in
+                    // XML (app:layoutManager), which kept the unused StaggeredGridLayoutManager whole. No layout
+                    // here names one: the grid sets its manager in code.
+                    ignoreFrom('androidx.recyclerview:recyclerview')
+                    // androidx.core's Parcelizers (IconCompat, RemoteActionCompat) and the lifecycle observers are
+                    // kept for reflection the launcher never does: it uses neither, and its activities are plain.
+                    ignoreFrom('androidx.versionedparcelable:versionedparcelable')
+                    ignoreFrom('androidx.lifecycle:lifecycle-runtime')
+                }
+            }
             // Sideloaded over ADB, never published: sign with the debug key so it installs over a debug build.
             signingConfig signingConfigs.debug
         }
