@@ -305,6 +305,7 @@
                             android:shadowDx="0"
                             android:shadowDy="2"
                             android:shadowRadius="7"
+                            android:fontFeatureSettings="tnum"
                             android:includeFontPadding="false" />
 
                         <View
