@@ -427,6 +427,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         card.setLayoutParams(cardLp);
         if (tvosFocus) {
             ((TileShadowView) v.findViewById(R.id.tvosShadow)).fitTile(w, h);
+            v.findViewById(R.id.tvosShine).setBackground(new GlossDrawable());
         } else {
             // Without tvos_focus nothing ever shows them: out of every tile's measure and draw.
             v.findViewById(R.id.tvosShadow).setVisibility(View.GONE);

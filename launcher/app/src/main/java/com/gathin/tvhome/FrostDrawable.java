@@ -197,8 +197,8 @@ final class FrostDrawable extends Drawable {
         sharpMatrix.setScale(screenW / sharp.getWidth(), screenH / sharp.getHeight());
         sharpMatrix.postTranslate(-at[0], -at[1]);
         float bend = LiquidGlass.bend(density);
-        float kx = Math.max(0.5f, 1f - bend / Math.max(1f, rect.width() / 2f));
-        float ky = Math.max(0.5f, 1f - bend / Math.max(1f, rect.height() / 2f));
+        float kx = LiquidGlass.lensScale(bend, rect.width() / 2f);
+        float ky = LiquidGlass.lensScale(bend, rect.height() / 2f);
         lensMatrix.set(sharpMatrix);
         lensMatrix.postScale(1f / kx, 1f / ky, rect.centerX(), rect.centerY());
         sharpShader.setLocalMatrix(lensMatrix);

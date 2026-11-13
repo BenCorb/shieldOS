@@ -56,6 +56,17 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     void setGlassPainter(GlassPainter painter) {
         glassPainter = painter;
     }
+    /**
+     * Room at the grid's sides that the band must leave free (start and end, px): tvOS Home gives the grid this much
+     * extra padding where its wrapper used to have margins, and the band keeps the size it had inside the old edges.
+     */
+    private int insetStart, insetEnd;
+
+    void setSideInsets(int start, int end) {
+        insetStart = Math.max(0, start);
+        insetEnd = Math.max(0, end);
+    }
+
     /** The band exactly as last drawn, in the grid's coordinates; empty when no band is drawn. */
     private final RectF lastBand = new RectF();
     private float lastRadius;
@@ -172,13 +183,16 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         // 22dp at the sides (the grid's 10dp padding makes room): a focused first or last tile grows about 7dp
         // outwards and still keeps about the band's top margin from its rounded end.
         float sidePad = 22 * density;
-        float side = Math.max(0f, Math.min(sidePad, Math.min(rect.left, parent.getWidth() - rect.right) - density));
+        boolean rtl = parent.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+        float leftEdge = rtl ? insetEnd : insetStart;
+        float rightEdge = parent.getWidth() - (rtl ? insetStart : insetEnd);
+        float side = Math.max(0f, Math.min(sidePad, Math.min(rect.left - leftEdge, rightEdge - rect.right) - density));
         float radius = AppAdapter.cornerRadius(cardWidth, density);
         if (evenPadding) {
             // The same padding on all four sides, so the band's corners are concentric with the tiles' everywhere.
             int inner = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
             // A single row's tiles can run off the screen, so only its top limits the padding; its ends are clamped below.
-            float room = (singleRow ? rect.top : Math.min(rect.top, Math.min(rect.left, parent.getWidth() - rect.right))) - density;
+            float room = (singleRow ? rect.top : Math.min(rect.top, Math.min(rect.left - leftEdge, rightEdge - rect.right))) - density;
             float even = evenPaddingPx(inner, dockSize, cardWidth, room);
             rect.inset(-even, -even);
             radius = radiusPx(radius, even);

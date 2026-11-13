@@ -467,8 +467,8 @@ public class BlurBackdropView extends View {
         // The rim's bend: the picture scaled down about the shape's centre, so a point at the rim shows what lies
         // LiquidGlass.bend further in, as a thick lens edge does. The lens layer keeps it to the rim.
         float bend = bendPx;
-        float kx = Math.max(0.5f, 1f - bend / Math.max(1f, shape.width() / 2f));
-        float ky = Math.max(0.5f, 1f - bend / Math.max(1f, shape.height() / 2f));
+        float kx = LiquidGlass.lensScale(bend, shape.width() / 2f);
+        float ky = LiquidGlass.lensScale(bend, shape.height() / 2f);
         lensMatrix.set(sharpMatrix);
         lensMatrix.postScale(1f / kx, 1f / ky, shape.centerX(), shape.centerY());
         BitmapShader bent;
