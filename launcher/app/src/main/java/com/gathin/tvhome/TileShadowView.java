@@ -9,7 +9,8 @@ import android.view.View;
  * Draws TileShadowDrawable for the tile it sits behind. The view is the tile plus the blur's spread on every side
  * (and its drop below), laid out round the card by AppAdapter, because whatever a view draws past its own bounds is
  * cut off: the shadow lives entirely outside the tile. It scales about the tile's centre, as the card does. Its
- * strength is the drawing's own alpha (setShadowAlpha), not the view's.
+ * strength (setShadowAlpha) is the view's alpha: the renderer fades it at each frame without redrawing the view,
+ * and as the view draws a single bitmap, that is the same picture as fading the bitmap itself.
  */
 public class TileShadowView extends View {
     private final TileShadowDrawable shadow;
@@ -21,7 +22,13 @@ public class TileShadowView extends View {
         density = context.getResources().getDisplayMetrics().density;
         shadow = new TileShadowDrawable(density);
         setWillNotDraw(false);
-        shadow.setAlpha(0);
+        setAlpha(0f);
+    }
+
+    /** One bitmap: the view's alpha goes straight onto it, with no offscreen layer. */
+    @Override
+    public boolean hasOverlappingRendering() {
+        return false;
     }
 
     float shadowAlpha() {
@@ -32,8 +39,7 @@ public class TileShadowView extends View {
         alpha = Math.max(0f, Math.min(1f, alpha));
         if (alpha == shadowAlpha) return;
         shadowAlpha = alpha;
-        shadow.setAlpha(Math.round(alpha * 255f));
-        invalidate();
+        setAlpha(alpha);
     }
 
     /** Sizes the view round a tileW x tileH card at the top of its item (call before layout). */
@@ -54,7 +60,7 @@ public class TileShadowView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (shadowAlpha <= 0f) return;
+        // Always recorded, whatever the alpha: the fade changes no drawing, and a view at alpha 0 is not rendered.
         int pad = TileShadowDrawable.spread(density);
         shadow.setBounds(pad, pad, getWidth() - pad, getHeight() - pad - TileShadowDrawable.drop(density));
         shadow.draw(canvas);

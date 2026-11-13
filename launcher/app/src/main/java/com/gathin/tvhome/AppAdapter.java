@@ -425,7 +425,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         cardLp.width = w;
         cardLp.height = h;
         card.setLayoutParams(cardLp);
-        ((TileShadowView) v.findViewById(R.id.tvosShadow)).fitTile(w, h);
+        if (tvosFocus) {
+            ((TileShadowView) v.findViewById(R.id.tvosShadow)).fitTile(w, h);
+        } else {
+            // Without tvos_focus nothing ever shows them: out of every tile's measure and draw.
+            v.findViewById(R.id.tvosShadow).setVisibility(View.GONE);
+            v.findViewById(R.id.tvosShine).setVisibility(View.GONE);
+        }
         View name = v.findViewById(R.id.name);
         ViewGroup.MarginLayoutParams nameLp = (ViewGroup.MarginLayoutParams) name.getLayoutParams();
         nameLp.width = w;

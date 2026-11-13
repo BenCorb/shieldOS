@@ -51,6 +51,12 @@ final class FrostDrawable extends Drawable {
     private Bitmap lens, light;
     private BitmapShader lensShader;
     private float layersW, layersH;
+    /** API 29+: the rim's mix of the sharp picture and the lens, kept while both stay the same (see BlurBackdropView). */
+    private ComposeShader compose;
+    private static final boolean REUSE_SHADERS = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q;
+    /** The last menu size's layers, so a menu opened again does not make them again. UI thread only. */
+    private static Bitmap[] cachedLayers;
+    private static float cachedW, cachedH, cachedRadius, cachedDensity;
 
     private FrostDrawable(View host, Bitmap frost, Bitmap sharp, float screenW, float screenH, float radius,
                           float density, boolean liquid) {
@@ -78,6 +84,19 @@ final class FrostDrawable extends Drawable {
         this.sharp = sharp;
         frostShader = new BitmapShader(frost, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
         sharpShader = sharp == null ? null : new BitmapShader(sharp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        compose = null;
+    }
+
+    /** LiquidGlass's layers for a menu of this size, from the last menu's when it had the same. */
+    private static Bitmap[] layersFor(float w, float h, float radius, float density) {
+        if (cachedLayers == null || cachedW != w || cachedH != h || cachedRadius != radius || cachedDensity != density) {
+            cachedLayers = LiquidGlass.layers(w, h, radius, density);
+            cachedW = w;
+            cachedH = h;
+            cachedRadius = radius;
+            cachedDensity = density;
+        }
+        return cachedLayers;
     }
 
     /**
@@ -91,7 +110,7 @@ final class FrostDrawable extends Drawable {
         int w = decor.getWidth(), h = decor.getHeight();
         if (w <= 0 || h <= 0) return;
         float density = activity.getResources().getDisplayMetrics().density;
-        Bitmap wallpaper = BlurBackdropView.copyOfLatest();
+        Bitmap wallpaper = BlurBackdropView.latestBlur();
         Bitmap wallpaperSharp = liquid ? BlurBackdropView.latestSharp() : null;
         final FrostDrawable[] glass = new FrostDrawable[1];
         if (wallpaper != null) {
@@ -102,25 +121,34 @@ final class FrostDrawable extends Drawable {
         // Liquid glass wants a sharper copy for its rim: take the window at half size, and shrink it for the frost.
         int copyDs = liquid ? 2 : ds;
         Bitmap copy = Bitmap.createBitmap(Math.max(1, w / copyDs), Math.max(1, h / copyDs), Bitmap.Config.ARGB_8888);
+        android.content.Context app = activity.getApplicationContext();
         try {
             PixelCopy.request(activity.getWindow(), copy, result -> {
                 if (result != PixelCopy.SUCCESS || activity.isFinishing()) return;
-                Bitmap small = copy;
-                if (liquid) small = Bitmap.createScaledBitmap(copy, Math.max(1, w / ds), Math.max(1, h / ds), true);
-                float r = BlurBackdropView.radius(level);
-                // Level 0 is clear glass: the copy itself, unblurred.
-                Bitmap frost = r > 0f ? BlurBackdropView.blur(activity, small, r)
-                        : small.copy(Bitmap.Config.ARGB_8888, false);
-                Bitmap sharp = liquid ? BlurBackdropView.blur(activity, copy, 2f) : null;
-                if (liquid && sharp == null) sharp = copy;
-                if (frost == null) return;
-                // Bitmaps a frame may still draw are left to the garbage collector rather than recycled.
-                if (glass[0] != null) {
-                    glass[0].setPictures(frost, sharp);
-                    glass[0].invalidateSelf();
-                } else {
-                    panel.setBackground(new FrostDrawable(panel, frost, sharp, w, h, radiusPx, density, liquid));
-                }
+                // The blurs run on the glass's worker, not here on the UI thread, where they held up the drop-in.
+                BlurBackdropView.GLASS_WORKER.execute(() -> {
+                    Bitmap small = copy;
+                    if (liquid) small = Bitmap.createScaledBitmap(copy, Math.max(1, w / ds), Math.max(1, h / ds), true);
+                    float r = BlurBackdropView.radius(level);
+                    // Level 0 is clear glass: the copy itself, unblurred.
+                    Bitmap frost = r > 0f ? BlurBackdropView.blur(app, small, r)
+                            : small.copy(Bitmap.Config.ARGB_8888, false);
+                    Bitmap sharp = liquid ? BlurBackdropView.blur(app, copy, 2f) : null;
+                    if (liquid && sharp == null) sharp = copy;
+                    if (frost == null) return;
+                    final Bitmap madeSharp = sharp;
+                    panel.post(() -> {
+                        if (activity.isFinishing() || !panel.isAttachedToWindow()) return;
+                        // Bitmaps a frame may still draw are left to the garbage collector rather than recycled.
+                        if (glass[0] != null) {
+                            glass[0].setPictures(frost, madeSharp);
+                            glass[0].invalidateSelf();
+                        } else {
+                            panel.setBackground(new FrostDrawable(panel, frost, madeSharp, w, h, radiusPx, density,
+                                    liquid));
+                        }
+                    });
+                });
             }, new Handler(Looper.getMainLooper()));
         } catch (IllegalArgumentException e) {
             // The window has no surface yet: the wallpaper glass, if any, stays.
@@ -158,10 +186,11 @@ final class FrostDrawable extends Drawable {
     /** The rim's bent, sharper picture, the shade and the light, as BlurBackdropView draws the dock's glass. */
     private void drawLiquid(Canvas canvas) {
         if (lens == null || Math.abs(layersW - rect.width()) >= 1f || Math.abs(layersH - rect.height()) >= 1f) {
-            Bitmap[] made = LiquidGlass.layers(rect.width(), rect.height(), radius, density);
+            Bitmap[] made = layersFor(rect.width(), rect.height(), radius, density);
             lens = made[0];
             light = made[1];
             lensShader = new BitmapShader(lens, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            compose = null;
             layersW = rect.width();
             layersH = rect.height();
         }
@@ -176,7 +205,12 @@ final class FrostDrawable extends Drawable {
         maskMatrix.setScale(rect.width() / lens.getWidth(), rect.height() / lens.getHeight());
         maskMatrix.postTranslate(rect.left, rect.top);
         lensShader.setLocalMatrix(maskMatrix);
-        lensPaint.setShader(new ComposeShader(sharpShader, lensShader, PorterDuff.Mode.DST_IN));
+        if (!REUSE_SHADERS) {
+            lensPaint.setShader(new ComposeShader(sharpShader, lensShader, PorterDuff.Mode.DST_IN));
+        } else {
+            if (compose == null) compose = new ComposeShader(sharpShader, lensShader, PorterDuff.Mode.DST_IN);
+            lensPaint.setShader(compose);
+        }
         canvas.drawRoundRect(rect, radius, radius, lensPaint);
         canvas.drawRoundRect(rect, radius, radius, shadePaint);
         canvas.drawBitmap(light, null, rect, lightPaint);
