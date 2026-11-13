@@ -286,6 +286,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** tvOS Home (config tvos_home): the grid runs full screen behind the header and peeks under the dock. */
     private boolean tvosHome;
     private int gridPeekPx;
+    /** tvOS Home: the header column's side margins, given to the grid as padding instead of to its wrapper. */
+    private int tvosSideStart, tvosSideEnd;
     /** Launcher settings' blur level (config dock_blur), shared by the backdrop and the menus' frost. */
     private int dockBlurLevel;
     /** config liquid_glass: the dock band, the gear and the menus get LiquidGlass's lens rim and light. */
@@ -656,11 +658,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             View wrapper = (View) grid.getParent();
             ViewGroup column = (ViewGroup) wrapper.getParent();
             column.removeView(wrapper);
-            // The same side margins the header column gave it, so the dock lines up with the clock and the gear.
+            // The wrapper spans the whole screen and the header column's side margins become the grid's padding, so
+            // the dock still lines up with the clock and the gear, while a focused edge tile's shadow can spread past
+            // the first and last columns instead of being cut off at the wrapper's edge.
             FrameLayout.LayoutParams full = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            full.setMarginStart(column.getPaddingStart());
-            full.setMarginEnd(column.getPaddingEnd());
+            tvosSideStart = column.getPaddingStart();
+            tvosSideEnd = column.getPaddingEnd();
+            grid.setPaddingRelative(grid.getPaddingStart() + tvosSideStart, grid.getPaddingTop(),
+                    grid.getPaddingEnd() + tvosSideEnd, grid.getPaddingBottom());
             root.addView(wrapper, root.indexOfChild(column), full);
             gridPeekPx = (int) (cfg.gridPeek * density);
         }
@@ -742,6 +748,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (dockRow) {
             dockDecoration = new DockDecoration(COLUMNS, density, cinematic, false, cfg.dockOpacity, cfg.dockGlass,
                     cfg.dockEvenPadding, cfg.dockBand, singleRow, cfg.dockBandAll);
+            // tvOS Home moved the wrapper's margins into the grid's padding: the band keeps the room it had.
+            if (tvosHome) dockDecoration.setSideInsets(tvosSideStart, tvosSideEnd);
             // Called from the grid's draw pass: apply on the next frame rather than invalidating mid-draw.
             dockDecoration.setBandListener(() -> {
                 if (dockBlurActive) root.post(this::applyDockBlur);
