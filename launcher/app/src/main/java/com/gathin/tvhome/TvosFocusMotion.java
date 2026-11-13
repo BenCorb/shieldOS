@@ -29,11 +29,17 @@ final class TvosFocusMotion {
     private final TileShadowView shadow;
     private final float density;
     private ValueAnimator sway;
-    /** Home is stopped (pause()): a sway asked for meanwhile, by a focus move's end action, waits for resume(). */
-    private static boolean homeHidden;
+    /**
+     * This tile's Home is stopped (pause()): a sway asked for meanwhile, by a focus move's end action, waits for
+     * resume(). Asked of the tile's own activity, never shared: an older Home instance that stops after a newer one
+     * started must not hold the visible one's sway.
+     */
+    private final java.util.function.BooleanSupplier homeHidden;
     private boolean swayPending;
 
-    TvosFocusMotion(View card, View shine, TileShadowView shadow, float density) {
+    TvosFocusMotion(View card, View shine, TileShadowView shadow, float density,
+                    java.util.function.BooleanSupplier homeHidden) {
+        this.homeHidden = homeHidden;
         this.card = card;
         this.shine = shine;
         this.shadow = shadow;
@@ -147,7 +153,7 @@ final class TvosFocusMotion {
     private void startSway() {
         stopSway();
         if (!card.isFocused()) return;
-        if (homeHidden) {
+        if (homeHidden.getAsBoolean()) {
             swayPending = true;
             return;
         }
@@ -171,8 +177,7 @@ final class TvosFocusMotion {
 
     /**
      * Home is no longer visible (onStop): the endless sway would keep waking the launcher at every frame behind the
-     * app on screen. It holds its place and picks up from there in resume(). Home-wide, through setHomeHidden: a holder
-     * resting in the pool while Home was stopped sways again once it is bound and focused.
+     * app on screen. It holds its place and picks up from there in resume().
      */
     void pause() {
         if (sway != null && sway.isRunning()) sway.pause();
@@ -188,11 +193,6 @@ final class TvosFocusMotion {
         } else if (pending) {
             startSway();
         }
-    }
-
-    /** Home's visibility, for every holder, also the ones not attached when it changed. */
-    static void setHomeHidden(boolean hidden) {
-        homeHidden = hidden;
     }
 
     private void stopSway() {

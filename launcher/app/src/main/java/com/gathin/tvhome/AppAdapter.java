@@ -464,7 +464,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
         return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha,
-                focusOvershoot, tvosFocus);
+                focusOvershoot, tvosFocus, () -> homeHidden);
     }
 
     @Override
@@ -702,10 +702,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return e.banner != null ? e.banner : e.icon;
     }
 
+    /** This adapter's Home is stopped (setFocusMotionPaused): its tiles' sway waits until it is visible again. */
+    private boolean homeHidden;
+
     /** tvos_focus: pauses (Home stopped) or resumes (Home visible again) the focused tile's endless sway. */
     void setFocusMotionPaused(RecyclerView grid, boolean paused) {
         if (!tvosFocus) return;
-        TvosFocusMotion.setHomeHidden(paused);
+        homeHidden = paused;
         for (int i = 0; i < grid.getChildCount(); i++) {
             RecyclerView.ViewHolder vh = grid.getChildViewHolder(grid.getChildAt(i));
             if (!(vh instanceof Holder)) continue;
@@ -961,7 +964,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         int dockEdge;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean tvosFocus) {
+               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean tvosFocus,
+               java.util.function.BooleanSupplier homeHidden) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -979,7 +983,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
             final float density = v.getResources().getDisplayMetrics().density;
             TileShadowView shadow = v.findViewById(R.id.tvosShadow);
-            motion = new TvosFocusMotion(card, shine, shadow, density);
+            motion = new TvosFocusMotion(card, shine, shadow, density, homeHidden);
             card.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
