@@ -87,6 +87,19 @@ final class LiquidGlass {
         return 26f * density;
     }
 
+    /** The rim's strongest zoom of the picture, on either axis. */
+    static final float MAX_ZOOM = 1.25f;
+
+    /**
+     * The scale about the shape's centre that pulls the picture in by bend px at the rim on one axis (half: half the
+     * shape's size on that axis), never zooming it more than MAX_ZOOM. Uncapped, a wide, short band (the dock) zoomed
+     * its sharper picture about 2x in height but 1.06x in width, and smeared poles and wires behind it into vertical
+     * streaks; capped, both axes stay close and the short edges simply bend a little less.
+     */
+    static float lensScale(float bend, float half) {
+        return Math.max(1f / MAX_ZOOM, 1f - bend / Math.max(1f, half));
+    }
+
     private static float clamp(float v, float lo, float hi) {
         return v < lo ? lo : v > hi ? hi : v;
     }
