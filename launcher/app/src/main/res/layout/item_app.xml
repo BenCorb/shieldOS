@@ -61,7 +61,6 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_gravity="center"
-            android:background="@drawable/tile_gloss"
             android:scaleX="2"
             android:scaleY="2"
             android:alpha="0"
