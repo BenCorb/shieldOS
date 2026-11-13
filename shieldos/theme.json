@@ -17,6 +17,7 @@
   "columns": 6,
   "icon_only_buttons": true,
   "icon_only_inputs": true,
+  "show_network_pill": false,
   "fade_rows": false,
   "app_glow": true,
   "ambient_glow": false,
