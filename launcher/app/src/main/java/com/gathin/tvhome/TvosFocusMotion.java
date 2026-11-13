@@ -1,24 +1,19 @@
 package com.gathin.tvhome;
 
-import android.animation.ValueAnimator;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
-import android.view.animation.LinearInterpolator;
 
 /**
  * One interruptible tvOS-style focus state owned by a single app tile holder: the focused tile grows, lifts on a soft
- * shadow (TileShadowDrawable, under the card), leans briefly towards the D-pad direction with its gloss
- * sliding the same way, then keeps a slow, faint sway of tilt and gloss while it stays focused, as tvOS's icons do.
+ * shadow (TileShadowDrawable, under the card) and leans briefly towards the D-pad direction with its gloss sliding the
+ * same way, then settles and stays still: Home draws nothing more until the next move.
  */
 final class TvosFocusMotion {
     static final float SCALE = 1.17f;
     static final float TILT_DEGREES = 5.5f;
     static final long DIRECTION_TTL_MS = 220L;
-    /** The idle sway: how far the tile tilts (degrees), and how long one full loop takes. */
-    static final float SWAY_DEGREES = 3.5f;
-    static final long SWAY_MS = 4200L;
     /** The focused tile's elevation, in dp: it keeps the tile drawn over its neighbours as it grows. */
     static final float LIFT_DP = 14f;
     private static int pendingDirection;
@@ -28,18 +23,8 @@ final class TvosFocusMotion {
     private final View shine;
     private final TileShadowView shadow;
     private final float density;
-    private ValueAnimator sway;
-    /**
-     * This tile's Home is stopped (pause()): a sway asked for meanwhile, by a focus move's end action, waits for
-     * resume(). Asked of the tile's own activity, never shared: an older Home instance that stops after a newer one
-     * started must not hold the visible one's sway.
-     */
-    private final java.util.function.BooleanSupplier homeHidden;
-    private boolean swayPending;
 
-    TvosFocusMotion(View card, View shine, TileShadowView shadow, float density,
-                    java.util.function.BooleanSupplier homeHidden) {
-        this.homeHidden = homeHidden;
+    TvosFocusMotion(View card, View shine, TileShadowView shadow, float density) {
         this.card = card;
         this.shine = shine;
         this.shadow = shadow;
@@ -82,7 +67,6 @@ final class TvosFocusMotion {
     }
 
     void set(boolean focused, boolean animations, boolean reduced, float shiftX) {
-        stopSway();
         card.animate().cancel();
         shine.animate().cancel();
         float scale = focused ? !animations ? 1.10f : reduced ? 1.08f : SCALE : 1f;
@@ -102,7 +86,6 @@ final class TvosFocusMotion {
         shadow.setTranslationX(card.getTranslationX());
         shadow.setTranslationY(card.getTranslationY());
         shadow.setShadowAlpha(focused ? 1f : 0f);
-        if (focused && animations && !reduced) startSway();
     }
 
     void animate(boolean focused, boolean animations, boolean reduced, float shiftX) {
@@ -110,7 +93,6 @@ final class TvosFocusMotion {
             set(focused, false, false, shiftX);
             return;
         }
-        stopSway();
         card.animate().cancel();
         shine.animate().cancel();
         int direction = focused && !reduced ? consumeDirection(SystemClock.uptimeMillis()) : 0;
@@ -132,8 +114,6 @@ final class TvosFocusMotion {
                 .translationZ(focused ? (reduced ? 6f : LIFT_DP) * density : 0f)
                 .rotationX(0f).rotationY(0f)
                 .setDuration(duration).setInterpolator(ease)
-                // Once the tile has settled, it keeps breathing gently while it stays focused.
-                .withEndAction(focused && !reduced ? this::startSway : null)
                 .start();
         shadow.animate().cancel();
         final float fromShadow = shadow.shadowAlpha(), toShadow = focused ? 1f : 0f;
@@ -147,58 +127,5 @@ final class TvosFocusMotion {
         shine.animate().alpha(focused && !reduced ? 1f : 0f)
                 .translationX(0f).translationY(-card.getHeight() * 0.22f)
                 .setDuration(duration).setInterpolator(ease).start();
-    }
-
-    /** A slow loop of tilt and gloss: a circle traced by the tilt, the gloss following it the opposite way. */
-    private void startSway() {
-        stopSway();
-        if (!card.isFocused()) return;
-        if (homeHidden.getAsBoolean()) {
-            swayPending = true;
-            return;
-        }
-        final float baseX = shine.getTranslationX(), baseY = shine.getTranslationY();
-        sway = ValueAnimator.ofFloat(0f, (float) (2 * Math.PI));
-        sway.setDuration(SWAY_MS);
-        sway.setRepeatCount(ValueAnimator.INFINITE);
-        sway.setInterpolator(new LinearInterpolator());
-        sway.addUpdateListener(a -> {
-            float t = (float) a.getAnimatedValue();
-            // Eased in over the first quarter turn, so the sway starts from the settled tile without a jump.
-            float ramp = Math.min(1f, a.getCurrentPlayTime() / (SWAY_MS / 4f));
-            float sx = (float) Math.sin(t) * ramp, sy = ((float) Math.cos(t) - 1f) * 0.6f * ramp;
-            card.setRotationY(sx * SWAY_DEGREES);
-            card.setRotationX(sy * SWAY_DEGREES);
-            shine.setTranslationX(baseX - sx * card.getWidth() * 0.14f);
-            shine.setTranslationY(baseY + sy * card.getHeight() * 0.14f);
-        });
-        sway.start();
-    }
-
-    /**
-     * Home is no longer visible (onStop): the endless sway would keep waking the launcher at every frame behind the
-     * app on screen. It holds its place and picks up from there in resume().
-     */
-    void pause() {
-        if (sway != null && sway.isRunning()) sway.pause();
-    }
-
-    /** Home is visible again (onStart): the sway goes on where pause() left it. */
-    void resume() {
-        boolean pending = swayPending;
-        swayPending = false;
-        if (sway != null) {
-            if (card.isFocused()) sway.resume();
-            else stopSway();
-        } else if (pending) {
-            startSway();
-        }
-    }
-
-    private void stopSway() {
-        swayPending = false;
-        if (sway == null) return;
-        sway.cancel();
-        sway = null;
     }
 }

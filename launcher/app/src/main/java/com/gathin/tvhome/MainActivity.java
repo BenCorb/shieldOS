@@ -1172,7 +1172,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateClockVisibility();
         clockRefresh.start();   // with timeReceiver: while Home is visible, paused or not
         tileRefresh.onStart();
-        if (adapter != null) adapter.setFocusMotionPaused(grid, false);
     }
 
     @Override
@@ -1429,8 +1428,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         handler.removeCallbacks(clockCheck);
         stopped = true;
         tileRefresh.onStop();
-        // Not in onPause: a menu or a translucent window leaves Home on screen, still swaying.
-        if (adapter != null) adapter.setFocusMotionPaused(grid, true);
     }
 
     /**

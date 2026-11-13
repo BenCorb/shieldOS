@@ -33,7 +33,7 @@ A stock CleanYourTV theme pushed to a shieldOS build looks the way it does upstr
 
 | Key | Values | What it does |
 |---|---|---|
-| `tvos_focus` | bool | Focus lives on the tile itself instead of a moving glass box: the focused tile grows, lifts on a soft drop shadow, leans briefly towards the D-pad direction with its gloss sliding the same way, then keeps a slow, faint sway while it stays focused. Grid tiles only show their name while focused; dock tiles stay icon-only. |
+| `tvos_focus` | bool | Focus lives on the tile itself instead of a moving glass box: the focused tile grows, lifts on a soft drop shadow, leans briefly towards the D-pad direction with its gloss sliding the same way, then settles and stays still. Grid tiles only show their name while focused; dock tiles stay icon-only. |
 | `tvos_home` | bool | tvOS-style Home: the dock sits low with the first grid row peeking under it. **Down** slides the dock to the top, hides the clock and header and fades in a full-screen blur of the wallpaper; **Back** returns to the dock. The clock moves, small, to the top right. Needs `dock_row`; `rows_below_dock` is ignored. |
 | `grid_peek` | 0–120 (dp) | With `tvos_home`, how much of the first grid row shows under the dock. Default 28. |
 | `liquid_glass` | bool | Liquid Glass on the dock band, the Settings button and popup menus: the blurred wallpaper bent inwards along the rim like the edge of a lens, a faint colour fringe and a specular rim lit from the top left. Drawn live with shaders every frame, so it never lags when the row scrolls. Needs `dock_blur` > 0. |
